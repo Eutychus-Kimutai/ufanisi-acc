@@ -53,7 +53,6 @@ func (s *LedgerService) PostTransaction(ctx context.Context, transaction Transac
 	if err != nil {
 		return err
 	}
-	log.Printf("Started transaction: %s\n", transaction.Id)
 	// Verify account exists
 	transactionId := uuid.New()
 	createdAt := time.Now()
@@ -68,7 +67,6 @@ func (s *LedgerService) PostTransaction(ctx context.Context, transaction Transac
 		tx.Rollback()
 		return err
 	}
-	log.Printf("Created transaction: %+v\n", transaction)
 	// Verify accounts exist
 	for _, entry := range transaction.Entries {
 		_, err := s.repo.GetAccount(ctx, entry.AccountId)
