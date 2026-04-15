@@ -7,6 +7,7 @@ Event-driven ledger system for loans and investments.
 Ufanisi Ledger is a financial backend system that converts raw payment data into deterministic business state. It uses double-entry bookkeeping to maintain accurate financial records with full auditability.
 
 The system operates across three conceptual layers:
+
 - **Ingestion Layer** - Receives raw payment data
 - **Processing Layer** - Interprets and classifies transactions
 - **Ledger Layer** - Authoritative system of record with double-entry bookkeeping
@@ -20,15 +21,16 @@ The system consists of two main components that communicate via RabbitMQ:
 **Ledger Consumer** - A RabbitMQ consumer that processes transaction commands asynchronously. This service subscribes to message queues and executes ledger operations with built-in retry logic and dead-letter queue handling for failed messages.
 
 The separation enables:
+
 - Scalability through async processing
 - Resilience through message persistence
 - Decoupling between services
 
 ## Components
 
-| Component | Description |
-|-----------|-------------|
-| **Ledger API** | HTTP server for account and transaction operations |
+| Component           | Description                                        |
+| ------------------- | -------------------------------------------------- |
+| **Ledger API**      | HTTP server for account and transaction operations |
 | **Ledger Consumer** | RabbitMQ consumer for async transaction processing |
 
 ## Features
@@ -73,11 +75,13 @@ The separation enables:
 ### Run Services
 
 Start the Ledger API:
+
 ```bash
 go run cmd/ledger/main.go
 ```
 
 Start the Ledger Consumer (in a separate terminal):
+
 ```bash
 go run cmd/ledger-consumer/main.go
 ```
@@ -85,6 +89,7 @@ go run cmd/ledger-consumer/main.go
 ### Test the API
 
 Create an account:
+
 ```bash
 curl -X POST http://localhost:8080/accounts \
   -H "Content-Type: application/json" \
@@ -92,6 +97,7 @@ curl -X POST http://localhost:8080/accounts \
 ```
 
 Post a transaction:
+
 ```bash
 curl -X POST http://localhost:8080/transactions \
   -H "Content-Type: application/json" \
@@ -111,8 +117,8 @@ curl -X POST http://localhost:8080/transactions \
 
 ### Environment Variables
 
-| Variable | Description | Example |
-|----------|-------------|---------|
+| Variable | Description                  | Example                                                 |
+| -------- | ---------------------------- | ------------------------------------------------------- |
 | `DB_URL` | PostgreSQL connection string | `postgres://user:pass@localhost/ledger?sslmode=disable` |
 
 ### Config File
@@ -182,23 +188,23 @@ rabbitmq:
 
 ## API Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/accounts` | Create a new account |
-| GET | `/accounts/:id` | Get account with balance |
-| POST | `/transactions` | Post a transaction |
-| GET | `/accounts/:id/transactions` | Get account transaction history |
+| Method | Endpoint                     | Description                     |
+| ------ | ---------------------------- | ------------------------------- |
+| POST   | `/accounts`                  | Create a new account            |
+| GET    | `/accounts/:id`              | Get account with balance        |
+| POST   | `/transactions`              | Post a transaction              |
+| GET    | `/accounts/:id/transactions` | Get account transaction history |
 
 ## Message Queue
 
 ### Queues
 
-| Queue | Purpose |
-|-------|---------|
-| `ledger.loan` | Loan transaction commands |
-| `ledger.loan.dlq` | Failed loan commands |
-| `ledger.investment` | Investment transaction commands |
-| `ledger.investment.dlq` | Failed investment commands |
+| Queue                   | Purpose                         |
+| ----------------------- | ------------------------------- |
+| `ledger.loan`           | Loan transaction commands       |
+| `ledger.loan.dlq`       | Failed loan commands            |
+| `ledger.investment`     | Investment transaction commands |
+| `ledger.investment.dlq` | Failed investment commands      |
 
 ### Command Format
 
@@ -208,8 +214,8 @@ rabbitmq:
   "payload": {
     "reference": "TXN-001",
     "entries": [
-      {"account_id": "uuid", "amount": 100, "type": "Debit"},
-      {"account_id": "uuid", "amount": 100, "type": "Credit"}
+      { "account_id": "uuid", "amount": 100, "type": "Debit" },
+      { "account_id": "uuid", "amount": 100, "type": "Credit" }
     ]
   }
 }
@@ -218,11 +224,13 @@ rabbitmq:
 ## Testing
 
 Run unit tests:
+
 ```bash
 go test ./...
 ```
 
 Run integration tests:
+
 ```bash
 # Ensure PostgreSQL and RabbitMQ are running
 go test ./internal/domain/...
