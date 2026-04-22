@@ -1,5 +1,5 @@
 -- +goose Up
-CREATE TABLE entries (
+CREATE TABLE IF NOT EXISTS entries (
     id UUID PRIMARY KEY,
     account_id UUID NOT NULL,
     transaction_id UUID NOT NULL,
@@ -12,4 +12,4 @@ CREATE TABLE entries (
 );
 
 -- +goose Down
-DROP TABLE entries;
+DROP TABLE IF EXISTS entries;

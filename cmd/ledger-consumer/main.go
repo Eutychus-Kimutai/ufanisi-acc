@@ -111,8 +111,14 @@ func (c *Consumer) processMessage(msg amqp.Delivery) error {
 	if err != nil {
 		return fmt.Errorf("Failed to unmarshal message: %s", err)
 	}
-	entries := make([]domain.Entry, len(cmd.Payload.Entries))
-	for i, e := range cmd.Payload.Entries {
+	var payload commands.Payload
+	err = json.Unmarshal(cmd.Payload, &payload)
+	if err != nil {
+		return fmt.Errorf("Failed to unmarshal command payload: %s", err)
+	}
+
+	entries := make([]domain.Entry, len(payload.Entries))
+	for i, e := range payload.Entries {
 		parsedId, err := uuid.Parse(e.AccountID)
 		if err != nil {
 			return fmt.Errorf("Failed to parse account ID: %s", err)
@@ -127,9 +133,10 @@ func (c *Consumer) processMessage(msg amqp.Delivery) error {
 	switch cmd.Type {
 	case commands.PostTransaction:
 		return c.ledger.PostTransaction(context.Background(), domain.Transaction{
-			Reference: cmd.Payload.Reference,
+			Reference: payload.Reference,
 			Entries:   entries})
 	default:
+		log.Printf("Recieved unhandled command type: %s", cmd.Type)
 		return fmt.Errorf("Unknown command type: %s", cmd.Type)
 	}
 }

@@ -1,5 +1,5 @@
 -- +goose Up
-CREATE TABLE transactions (
+CREATE TABLE IF NOT EXISTS transactions (
     id UUID PRIMARY KEY,
     reference TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -7,4 +7,4 @@ CREATE TABLE transactions (
 );
 
 -- +goose Down
-DROP TABLE transactions;
+DROP TABLE IF EXISTS transactions;

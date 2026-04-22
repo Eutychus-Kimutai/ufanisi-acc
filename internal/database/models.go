@@ -5,6 +5,7 @@
 package database
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,6 +19,14 @@ type Account struct {
 	UpdatedAt time.Time
 }
 
+type Client struct {
+	ID         uuid.UUID
+	Name       string
+	ClientType string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
 type Entry struct {
 	ID            uuid.UUID
 	AccountID     uuid.UUID
@@ -28,9 +37,32 @@ type Entry struct {
 	UpdatedAt     time.Time
 }
 
+type Loan struct {
+	ID                uuid.UUID
+	ClientID          uuid.UUID
+	LoanNumber        string
+	ProductType       string
+	Status            string
+	PrincipalAmount   int64
+	OutstandingAmount int64
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
 type Transaction struct {
 	ID        uuid.UUID
 	Reference string
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+type UnresolvedPayment struct {
+	ID             uuid.UUID
+	ClientRef      string
+	Amount         int64
+	PaymentChannel string
+	ExternalID     string
+	Reason         string
+	CreatedAt      time.Time
+	RawEvent       json.RawMessage
 }

@@ -9,6 +9,7 @@ type RabbitConfig struct {
 	Queues   struct {
 		Loan       string `yaml:"loan"`
 		Investment string `yaml:"investment"`
+		Unresolved string `yaml:"unresolved"`
 	} `yaml:"queues"`
 	Retry struct {
 		MaxRetries   int `yaml:"max_retries"`

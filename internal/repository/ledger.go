@@ -110,3 +110,18 @@ func (l *LedgerRepository) CreateEntry(ctx context.Context, entry database.Entry
 	}
 	return nil
 }
+
+func (l *LedgerRepository) CreateUnresolvedPayment(ctx context.Context, payment database.UnresolvedPayment) error {
+	err := l.db.CreateUnresolvedPayment(ctx, database.CreateUnresolvedPaymentParams{
+		Reason:         payment.Reason,
+		ClientRef:      payment.ClientRef,
+		Amount:         payment.Amount,
+		PaymentChannel: payment.PaymentChannel,
+		ExternalID:     payment.ExternalID,
+		RawEvent:       payment.RawEvent,
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}

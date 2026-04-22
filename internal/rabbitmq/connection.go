@@ -100,5 +100,32 @@ func QueueDeclare(ch *amqp.Channel, cfg *RabbitConfig) error {
 		log.Printf("Failed to declare investment DLQ: %s\n", err)
 		return fmt.Errorf("Failed to declare investment DLQ: %s", err)
 	}
+	_, err = ch.QueueDeclare(
+		cfg.Queues.Unresolved,
+		true,  // durable
+		false, // autoDelete
+		false, // exclusive
+		false, // noWait
+		nil,
+	)
+	if err != nil {
+		log.Printf("Failed to declare unresolved queue: %s\n", err)
+		return fmt.Errorf("Failed to declare unresolved queue: %s", err)
+	}
+	_, err = ch.QueueDeclare(
+		cfg.Queues.Unresolved+".dlq",
+		true,  // durable
+		false, // autoDelete
+		false, // exclusive
+		false, // noWait
+		amqp.Table{
+			"x-dead-letter-exchange":    "",
+			"x-dead-letter-routing-key": cfg.Queues.Unresolved + ".dlq",
+		},
+	)
+	if err != nil {
+		log.Printf("Failed to declare unresolved DLQ: %s\n", err)
+		return fmt.Errorf("Failed to declare unresolved DLQ: %s", err)
+	}
 	return nil
 }

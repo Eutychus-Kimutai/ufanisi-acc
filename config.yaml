@@ -5,6 +5,7 @@ password: "guest"
 queues:
   loan: "ledger.loan"
   investment: "ledger.investment"
+  unresolved: "payment.unresolved"
 retry:
   max_attempts: 5
   delay_seconds: 10
