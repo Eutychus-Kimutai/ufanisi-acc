@@ -118,7 +118,10 @@ func QueueDeclare(ch *amqp.Channel, cfg *RabbitConfig) error {
 		false, // autoDelete
 		false, // exclusive
 		false, // noWait
-		nil,
+		amqp.Table{
+			"x-dead-letter-exchange":    "",
+			"x-dead-letter-routing-key": cfg.Queues.Unresolved + ".dlq",
+		},
 	)
 	if err != nil {
 		log.Printf("Failed to declare unresolved DLQ: %s\n", err)

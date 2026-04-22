@@ -54,7 +54,7 @@ func (w *Worker) HandlePaymentEvent(ctx context.Context, event payment.PaymentEv
 
 	ref := fmt.Sprintf("loan_%s_%s_%s", loan.ID, event.PaymentChannel, event.ExternalId)
 
-	cmd := commands.NewCommand(
+	cmd, err := commands.NewCommand(
 		commands.ApplyLoanRepayment,
 		commands.LoanRepaymentPayload{
 			ClientID:       client.ID.String(),
@@ -64,14 +64,13 @@ func (w *Worker) HandlePaymentEvent(ctx context.Context, event payment.PaymentEv
 			Reference:      ref,
 		},
 	)
-	err = w.channel.Publish("",
-		w.queuename,
-		false,
-		false,
-		amqp.Publishing{
-			ContentType: "application/json",
-			Body:        cmd.Payload,
-		},
+	if err != nil {
+		return fmt.Errorf("Failed to create command: %w", err)
+	}
+	err = rabbitmq.PublishCommand(
+		w.channel,
+		w.cfg.Queues.Unresolved,
+		cmd,
 	)
 	if err != nil {
 		return fmt.Errorf("Failed to publish command: %w", err)
@@ -91,12 +90,9 @@ func (w *Worker) resolveLoan(ctx context.Context, event payment.PaymentEvent) (d
 		if errors.Is(err, sql.ErrNoRows) {
 			return database.Loan{}, database.Client{}, errors.New("Failed to retrieve loan")
 		}
+		return database.Loan{}, database.Client{}, fmt.Errorf("Failed to retrieve loan: %w", err)
 	}
 
-	client, err := w.repo.GetClientByReference(ctx, loan.ClientID.String())
-	if err != nil {
-		return database.Loan{}, database.Client{}, errors.New("Failed to retrieve client for loan")
-	}
 	if loan.ProductType != parsedRef.ProductType {
 		return database.Loan{}, database.Client{}, errors.New("product type mismatch")
 	}
@@ -104,21 +100,24 @@ func (w *Worker) resolveLoan(ctx context.Context, event payment.PaymentEvent) (d
 		return database.Loan{}, database.Client{}, errors.New("loan is not active")
 	}
 
-	client, err = w.repo.GetClientByReference(ctx, event.ClientRef)
+	client, err := w.repo.GetClientByID(ctx, event.ClientRef)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if !errors.Is(err, sql.ErrNoRows) {
 			return database.Loan{}, database.Client{}, errors.New("Failed to retrieve client")
 		}
 
-		w.repo.CreateUnresolvedPayment(ctx, database.UnresolvedPayment{
+		err = w.repo.CreateUnresolvedPayment(ctx, database.UnresolvedPayment{
 			ClientRef:      event.ClientRef,
 			Amount:         event.Amount,
 			PaymentChannel: string(event.PaymentChannel),
 			ExternalID:     event.ExternalId,
 			Reason:         "loan or client not found",
 		})
+		if err != nil {
+			return database.Loan{}, database.Client{}, fmt.Errorf("Failed to create unresolved payment: %w", err)
+		}
 
-		cmd := commands.NewCommand(
+		cmd, err := commands.NewCommand(
 			commands.UnresolvedPayment,
 			commands.UnresolvedPaymentPayload{
 				ClientRef:      event.ClientRef,
@@ -128,11 +127,17 @@ func (w *Worker) resolveLoan(ctx context.Context, event payment.PaymentEvent) (d
 				Reason:         "loan or client not found",
 			},
 		)
+		if err != nil {
+			return database.Loan{}, database.Client{}, fmt.Errorf("Failed to create command: %w", err)
+		}
 
-		w.channel.Publish("", w.cfg.Queues.Unresolved, false, false, amqp.Publishing{
+		err = w.channel.Publish("", w.cfg.Queues.Unresolved, false, false, amqp.Publishing{
 			ContentType: "application/json",
 			Body:        cmd.Payload,
 		})
+		if err != nil {
+			return database.Loan{}, database.Client{}, fmt.Errorf("Failed to publish unresolved payment: %w", err)
+		}
 		return database.Loan{}, database.Client{}, errors.New("loan or client not found - payment marked unresolved")
 	}
 
@@ -144,8 +149,12 @@ func (w *Worker) resolveLoan(ctx context.Context, event payment.PaymentEvent) (d
 	if err != nil || len(loans) == 0 {
 		return database.Loan{}, database.Client{}, errors.New("no active loans found for client")
 	}
-
-	return loans[0], client, nil
+	for _, l := range loans {
+		if l.ID == loan.ID {
+			return l, client, nil
+		}
+	}
+	return database.Loan{}, database.Client{}, errors.New("loan does not belong to client")
 }
 
 func (w *Worker) getReference(event payment.PaymentEvent) string {

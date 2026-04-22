@@ -2,6 +2,7 @@ package loanworker
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/payment"
@@ -39,7 +40,8 @@ func (h *HTTPHandler) handlePaymentEvent(w http.ResponseWriter, r *http.Request)
 
 	err = h.worker.HandlePaymentEvent(r.Context(), event)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		log.Printf("Error handling payment event: %v\n", err)
+		http.Error(w, "Failed to process payment event", http.StatusBadRequest)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

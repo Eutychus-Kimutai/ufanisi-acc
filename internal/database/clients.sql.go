@@ -11,19 +11,19 @@ import (
 	"github.com/google/uuid"
 )
 
-const getClientByReference = `-- name: GetClientByReference :one
+const getClientByID = `-- name: GetClientByID :one
 SELECT id, name, client_type FROM clients WHERE id = $1
 `
 
-type GetClientByReferenceRow struct {
+type GetClientByIDRow struct {
 	ID         uuid.UUID
 	Name       string
 	ClientType string
 }
 
-func (q *Queries) GetClientByReference(ctx context.Context, id uuid.UUID) (GetClientByReferenceRow, error) {
-	row := q.db.QueryRowContext(ctx, getClientByReference, id)
-	var i GetClientByReferenceRow
+func (q *Queries) GetClientByID(ctx context.Context, id uuid.UUID) (GetClientByIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getClientByID, id)
+	var i GetClientByIDRow
 	err := row.Scan(&i.ID, &i.Name, &i.ClientType)
 	return i, err
 }

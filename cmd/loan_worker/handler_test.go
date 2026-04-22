@@ -3,13 +3,14 @@ package loanworker
 import (
 	"context"
 	"database/sql"
-	"log"
 	"os"
 	"testing"
 
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/payment"
+	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/rabbitmq"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,7 +35,17 @@ func TestWorker_HandlePaymentEvent(t *testing.T) {
 	defer db.Exec("DELETE FROM clients WHERE id = $1", clientID)
 
 	mockCh := &MockChannel{}
-	worker, err := NewWorker(db, mockCh, "payments.loan", nil)
+	worker, err := NewWorker(db, mockCh, "payments.loan", &rabbitmq.RabbitConfig{
+		Queues: struct {
+			Loan       string `yaml:"loan"`
+			Investment string `yaml:"investment"`
+			Unresolved string `yaml:"unresolved"`
+		}{
+			Unresolved: "unresolved_payments",
+			Loan:       "loans",
+			Investment: "investments",
+		},
+	})
 	require.NoError(t, err)
 
 	event := payment.PaymentEvent{
@@ -69,19 +80,19 @@ func TestWorker_HandlePaymentEvent(t *testing.T) {
 	event.Destination = payment.DestinationAccount("loan")
 	event.AccountReference = "LN999Mali"
 	err = worker.HandlePaymentEvent(context.Background(), event)
-	log.Printf("Error for non-existent loan: %v", err)
+	t.Logf("Error for non-existent loan: %v", err)
 	require.Error(t, err)
 
 	// Test product type mismatch
 	event.AccountReference = "LN123Invalid"
 	err = worker.HandlePaymentEvent(context.Background(), event)
-	log.Printf("Error for product type mismatch: %v", err)
+	t.Logf("Error for product type mismatch: %v", err)
 	require.Error(t, err)
 
 	// Test non-existent client
 	event.AccountReference = "LN123Mali"
 	event.ClientRef = uuid.New().String()
 	err = worker.HandlePaymentEvent(context.Background(), event)
-	log.Printf("Error for non-existent client: %v", err)
+	t.Logf("Error for non-existent client: %v", err)
 	require.Error(t, err)
 }

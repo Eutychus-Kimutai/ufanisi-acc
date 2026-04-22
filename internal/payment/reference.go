@@ -3,7 +3,6 @@ package payment
 import (
 	"errors"
 	"regexp"
-	"strings"
 )
 
 var (
@@ -12,16 +11,16 @@ var (
 )
 
 const (
-	LoanPrefix      = "LN"
-	ProductPrefix   = "Elimu"
-	ProductBusiness = "Biashara"
-	ProductPersonal = "Mali"
+	LoanPrefix       = "LN"
+	ProductEducation = "Elimu"
+	ProductBusiness  = "Biashara"
+	ProductPersonal  = "Mali"
 )
 
 var productTypeMap = map[string]string{
-	ProductPrefix:   "Education",
-	ProductBusiness: "Business",
-	ProductPersonal: "Personal",
+	ProductEducation: "Education",
+	ProductBusiness:  "Business",
+	ProductPersonal:  "Personal",
 }
 
 type AccountReference struct {
@@ -54,6 +53,5 @@ func EncodeAccountReference(loanNumber, productType string) string {
 			return loanNumber + suffix
 		}
 	}
-	lower := strings.ToLower(productType)
-	return loanNumber + string(lower[0]+'E'-'e')
+	return ""
 }

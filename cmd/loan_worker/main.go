@@ -1,6 +1,7 @@
 package loanworker
 
 import (
+	"context"
 	"database/sql"
 	"log"
 	"net/http"
@@ -17,10 +18,14 @@ func main() {
 	}
 
 	DB_URL := os.Getenv("DB_URL")
-	db, err := sql.Open("Postgres", DB_URL)
+	db, err := sql.Open("postgres", DB_URL)
 	if err != nil {
 		log.Fatalf("Error opening db: %s", err)
 	}
+	if err = db.Ping(); err != nil {
+		log.Fatalf("Error connecting to db: %s", err)
+	}
+	defer db.Close()
 
 	// Connect to RabbitMQ
 	conn, err := rabbitmq.NewConnection(cfg)
@@ -44,7 +49,7 @@ func main() {
 
 	// repo := repository.NewRepository(db)
 
-	worker, err := NewWorker(db, ch, "payments.loan", cfg)
+	worker, err := NewWorker(db, ch, cfg.Queues.Loan, cfg)
 	if err != nil {
 		log.Fatalf("Failed to create worker: %v", err)
 	}
@@ -53,11 +58,14 @@ func main() {
 
 	go func() {
 		log.Println("Starting HTTP server on :8080")
-		http.ListenAndServe(":8080", HTTPHandler)
+		if err := http.ListenAndServe(":8080", HTTPHandler); err != nil {
+			log.Fatalf("Failed to start HTTP server: %v", err)
+		}
+
 	}()
 
 	log.Println("Starting RabbitMQ consumer...")
-	err = StartConsumer(ch, "payments.loan", worker)
+	err = StartConsumer(context.Background(), ch, cfg.Queues.Loan, worker)
 	if err != nil {
 		log.Fatalf("Failed to start consumer: %v", err)
 	}

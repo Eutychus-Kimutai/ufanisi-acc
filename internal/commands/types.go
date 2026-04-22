@@ -1,6 +1,9 @@
 package commands
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"log"
+)
 
 type CommandType string
 
@@ -41,17 +44,18 @@ type Command struct {
 	Payload json.RawMessage `json:"payload"`
 }
 
-func NewCommand(cmdType CommandType, payload interface{}) Command {
+func NewCommand(cmdType CommandType, payload interface{}) (Command, error) {
 	return Command{
 		Type:    cmdType,
 		Payload: marshalPayload(payload),
-	}
+	}, nil
 }
 
 func marshalPayload(v interface{}) json.RawMessage {
 	data, err := json.Marshal(v)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Failed to marshal payload: %v", err)
+		return nil
 	}
 	return json.RawMessage(data)
 }

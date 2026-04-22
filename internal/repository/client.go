@@ -13,12 +13,12 @@ type Client struct {
 	ClientType string
 }
 
-func (r *LedgerRepository) GetClientByReference(ctx context.Context, clientID string) (database.Client, error) {
+func (r *LedgerRepository) GetClientByID(ctx context.Context, clientID string) (database.Client, error) {
 	parsedClientID, err := uuid.Parse(clientID)
 	if err != nil {
 		return database.Client{}, err
 	}
-	client, err := r.db.GetClientByReference(context.Background(), parsedClientID)
+	client, err := r.db.GetClientByID(ctx, parsedClientID)
 	if err != nil {
 		return database.Client{}, err
 	}

@@ -136,6 +136,7 @@ func (c *Consumer) processMessage(msg amqp.Delivery) error {
 			Reference: payload.Reference,
 			Entries:   entries})
 	default:
+		log.Printf("Recieved unhandled command type: %s", cmd.Type)
 		return fmt.Errorf("Unknown command type: %s", cmd.Type)
 	}
 }

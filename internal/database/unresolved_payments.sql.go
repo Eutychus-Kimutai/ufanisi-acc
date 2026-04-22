@@ -10,10 +10,9 @@ import (
 	"encoding/json"
 )
 
-const createUnresolvedPayment = `-- name: CreateUnresolvedPayment :one
+const createUnresolvedPayment = `-- name: CreateUnresolvedPayment :exec
 INSERT INTO unresolved_payments (client_ref, amount, payment_channel, external_id, reason, raw_event)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, client_ref, amount, payment_channel, external_id, reason, created_at, raw_event
 `
 
 type CreateUnresolvedPaymentParams struct {
@@ -25,8 +24,8 @@ type CreateUnresolvedPaymentParams struct {
 	RawEvent       json.RawMessage
 }
 
-func (q *Queries) CreateUnresolvedPayment(ctx context.Context, arg CreateUnresolvedPaymentParams) (UnresolvedPayment, error) {
-	row := q.db.QueryRowContext(ctx, createUnresolvedPayment,
+func (q *Queries) CreateUnresolvedPayment(ctx context.Context, arg CreateUnresolvedPaymentParams) error {
+	_, err := q.db.ExecContext(ctx, createUnresolvedPayment,
 		arg.ClientRef,
 		arg.Amount,
 		arg.PaymentChannel,
@@ -34,16 +33,5 @@ func (q *Queries) CreateUnresolvedPayment(ctx context.Context, arg CreateUnresol
 		arg.Reason,
 		arg.RawEvent,
 	)
-	var i UnresolvedPayment
-	err := row.Scan(
-		&i.ID,
-		&i.ClientRef,
-		&i.Amount,
-		&i.PaymentChannel,
-		&i.ExternalID,
-		&i.Reason,
-		&i.CreatedAt,
-		&i.RawEvent,
-	)
-	return i, err
+	return err
 }

@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS unresolved_payments (
     external_id TEXT NOT NULL,
     reason TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    raw_event JSONB NOT NULL
+    raw_event JSONB NOT NULL,
+    UNIQUE (external_id)
 );
 
 -- +goose Down

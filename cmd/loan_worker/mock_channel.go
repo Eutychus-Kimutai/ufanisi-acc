@@ -1,8 +1,6 @@
 package loanworker
 
 import (
-	"encoding/json"
-
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -16,13 +14,10 @@ type PublishedMessage struct {
 }
 
 func (m *MockChannel) Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
-	body, err := json.Marshal(json.RawMessage(msg.Body))
-	if err != nil {
-		return err
-	}
+
 	m.PublishedMessages = append(m.PublishedMessages, PublishedMessage{
 		Queue:   key,
-		Payload: body,
+		Payload: msg.Body,
 	})
 	return nil
 }
