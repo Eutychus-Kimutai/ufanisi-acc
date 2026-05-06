@@ -1,6 +1,7 @@
-package loanworker
+package httphandler
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -8,17 +9,19 @@ import (
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/payment"
 )
 
-type HTTPHandler struct {
-	worker *Worker
+type PaymentEventHandler interface {
+	HandlePaymentEvent(ctx context.Context, event payment.PaymentEvent) error
 }
 
-func NewHTTPHandler(w *Worker) *HTTPHandler {
-	return &HTTPHandler{
-		worker: w,
-	}
+type Handler struct {
+	worker PaymentEventHandler
 }
 
-func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func NewHandler(worker PaymentEventHandler) *Handler {
+	return &Handler{worker: worker}
+}
+
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/payment":
 		h.handlePaymentEvent(w, r)
@@ -30,7 +33,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *HTTPHandler) handlePaymentEvent(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handlePaymentEvent(w http.ResponseWriter, r *http.Request) {
 	var event payment.PaymentEvent
 	err := json.NewDecoder(r.Body).Decode(&event)
 	if err != nil {

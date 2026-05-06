@@ -27,3 +27,14 @@ func (q *Queries) GetClientByID(ctx context.Context, id uuid.UUID) (GetClientByI
 	err := row.Scan(&i.ID, &i.Name, &i.ClientType)
 	return i, err
 }
+
+const getInvestorCapitalAccount = `-- name: GetInvestorCapitalAccount :one
+SELECT id FROM accounts WHERE name = 'Investor Capital Account' LIMIT 1
+`
+
+func (q *Queries) GetInvestorCapitalAccount(ctx context.Context) (uuid.UUID, error) {
+	row := q.db.QueryRowContext(ctx, getInvestorCapitalAccount)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}

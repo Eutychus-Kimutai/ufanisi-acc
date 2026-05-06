@@ -18,7 +18,7 @@ type publisher interface {
 	Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
 }
 
-type Worker struct {
+type LoanWorker struct {
 	db        *sql.DB
 	channel   publisher
 	queuename string
@@ -26,8 +26,8 @@ type Worker struct {
 	cfg       *rabbitmq.RabbitConfig
 }
 
-func NewWorker(db *sql.DB, channel publisher, queuename string, cfg *rabbitmq.RabbitConfig) (*Worker, error) {
-	return &Worker{
+func NewWorker(db *sql.DB, channel publisher, queuename string, cfg *rabbitmq.RabbitConfig) (*LoanWorker, error) {
+	return &LoanWorker{
 		db:        db,
 		channel:   channel,
 		queuename: queuename,
@@ -36,7 +36,7 @@ func NewWorker(db *sql.DB, channel publisher, queuename string, cfg *rabbitmq.Ra
 	}, nil
 }
 
-func (w *Worker) HandlePaymentEvent(ctx context.Context, event payment.PaymentEvent) error {
+func (w *LoanWorker) HandlePaymentEvent(ctx context.Context, event payment.PaymentEvent) error {
 	if event.Amount <= 0 {
 		return errors.New("Amount must be greater than zero")
 	}
@@ -78,7 +78,7 @@ func (w *Worker) HandlePaymentEvent(ctx context.Context, event payment.PaymentEv
 	return nil
 }
 
-func (w *Worker) resolveLoan(ctx context.Context, event payment.PaymentEvent) (database.Loan, database.Client, error) {
+func (w *LoanWorker) resolveLoan(ctx context.Context, event payment.PaymentEvent) (database.Loan, database.Client, error) {
 	ref := w.getReference(event)
 
 	parsedRef, err := payment.ParseAccountReference(ref)
@@ -157,7 +157,7 @@ func (w *Worker) resolveLoan(ctx context.Context, event payment.PaymentEvent) (d
 	return database.Loan{}, database.Client{}, errors.New("loan does not belong to client")
 }
 
-func (w *Worker) getReference(event payment.PaymentEvent) string {
+func (w *LoanWorker) getReference(event payment.PaymentEvent) string {
 	if event.AccountReference != "" {
 		return event.AccountReference
 	}

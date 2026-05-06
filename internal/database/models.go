@@ -5,6 +5,7 @@
 package database
 
 import (
+	"database/sql"
 	"encoding/json"
 	"time"
 
@@ -12,11 +13,12 @@ import (
 )
 
 type Account struct {
-	ID        uuid.UUID
-	Name      string
-	Type      string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID           uuid.UUID
+	Name         string
+	Type         string
+	SettingValue sql.NullString
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 type Client struct {
@@ -35,6 +37,40 @@ type Entry struct {
 	Type          string
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+}
+
+type Investment struct {
+	ID               uuid.UUID
+	ClientID         uuid.UUID
+	PrincipalInitial int64
+	PrincipalCurrent int64
+	AnnualRate       string
+	Status           string
+	AccruedInterest  int64
+	NextAccrualAt    time.Time
+	LastAccrualAt    sql.NullTime
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+type InvestmentAccrual struct {
+	ID               uuid.UUID
+	InvestmentID     uuid.UUID
+	AccrualTimestamp time.Time
+	Amount           int64
+	CreatedAt        time.Time
+}
+
+type InvestmentWithdrawal struct {
+	ID                 uuid.UUID
+	InvestmentID       uuid.UUID
+	Amount             int64
+	NoticePeriodMonths int32
+	RequestedAt        time.Time
+	EligibleAt         time.Time
+	Status             string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 type Loan struct {

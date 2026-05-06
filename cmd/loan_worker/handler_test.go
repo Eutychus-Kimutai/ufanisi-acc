@@ -2,22 +2,18 @@ package loanworker
 
 import (
 	"context"
-	"database/sql"
-	"os"
 	"testing"
 
+	testutils "github.com/Eutychus-Kimutai/ufanisi-acc/cmd/test_utils"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/payment"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/rabbitmq"
 	"github.com/google/uuid"
-	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 )
 
 func TestWorker_HandlePaymentEvent(t *testing.T) {
-	err := godotenv.Load("../../.env")
-	require.NoError(t, err)
-	db, err := sql.Open("postgres", os.Getenv("DB_URL"))
+	db, err := testutils.SetupTestDB()
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -34,7 +30,7 @@ func TestWorker_HandlePaymentEvent(t *testing.T) {
 	defer db.Exec("DELETE FROM loans WHERE id = $1", loanID)
 	defer db.Exec("DELETE FROM clients WHERE id = $1", clientID)
 
-	mockCh := &MockChannel{}
+	mockCh := &testutils.MockChannel{}
 	worker, err := NewWorker(db, mockCh, "payments.loan", &rabbitmq.RabbitConfig{
 		Queues: struct {
 			Loan       string `yaml:"loan"`

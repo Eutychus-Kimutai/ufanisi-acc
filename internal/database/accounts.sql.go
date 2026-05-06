@@ -7,13 +7,15 @@ package database
 
 import (
 	"context"
+	"database/sql"
+	"time"
 
 	"github.com/google/uuid"
 )
 
 const createAccount = `-- name: CreateAccount :one
 INSERT INTO accounts (id, name, type) VALUES ($1, $2, $3)
-RETURNING id, name, type, created_at, updated_at
+RETURNING id, name, type, setting_value, created_at, updated_at
 `
 
 type CreateAccountParams struct {
@@ -29,6 +31,7 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		&i.ID,
 		&i.Name,
 		&i.Type,
+		&i.SettingValue,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -39,9 +42,17 @@ const getAccount = `-- name: GetAccount :one
 SELECT id, name, type, created_at, updated_at FROM accounts WHERE id = $1
 `
 
-func (q *Queries) GetAccount(ctx context.Context, id uuid.UUID) (Account, error) {
+type GetAccountRow struct {
+	ID        uuid.UUID
+	Name      string
+	Type      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (q *Queries) GetAccount(ctx context.Context, id uuid.UUID) (GetAccountRow, error) {
 	row := q.db.QueryRowContext(ctx, getAccount, id)
-	var i Account
+	var i GetAccountRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
@@ -50,4 +61,15 @@ func (q *Queries) GetAccount(ctx context.Context, id uuid.UUID) (Account, error)
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getInvestmentAnnualRate = `-- name: GetInvestmentAnnualRate :one
+SELECT setting_value FROM accounts WHERE name = 'system.investment_annual_rate'
+`
+
+func (q *Queries) GetInvestmentAnnualRate(ctx context.Context) (sql.NullString, error) {
+	row := q.db.QueryRowContext(ctx, getInvestmentAnnualRate)
+	var setting_value sql.NullString
+	err := row.Scan(&setting_value)
+	return setting_value, err
 }

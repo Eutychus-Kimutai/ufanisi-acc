@@ -15,6 +15,7 @@ import (
 var (
 	ErrAccountNotFound       = sql.ErrNoRows
 	ErrUnbalancedTransaction = errors.New("transaction is unbalanced")
+	ErrClientNotFound        = sql.ErrNoRows
 )
 
 type LedgerService struct {
@@ -82,7 +83,7 @@ func (s *LedgerService) PostTransaction(ctx context.Context, transaction Transac
 			ID:            uuid.New(),
 			AccountID:     entry.AccountId,
 			TransactionID: transactionId,
-			Amount:        entry.Amount,
+			Amount:        int64(entry.Amount),
 			Type:          string(entry.Type),
 			CreatedAt:     createdAt,
 			UpdatedAt:     createdAt,
@@ -120,18 +121,18 @@ func (s *LedgerService) CreateEntry(ctx context.Context, entry database.Entry) e
 }
 
 // Get balance
-func (s *LedgerService) GetBalance(ctx context.Context, accountId uuid.UUID) (int64, error) {
+func (s *LedgerService) GetBalance(ctx context.Context, accountId uuid.UUID) (float64, error) {
 	entries, err := s.repo.GetTransactionEntries(ctx, accountId)
 	if err != nil {
 		return 0, err
 	}
-	var balance int64
+	var balance float64
 	for _, entry := range entries {
 		switch entry.Type {
 		case "Debit":
-			balance += entry.Amount
+			balance += float64(entry.Amount)
 		case "Credit":
-			balance -= entry.Amount
+			balance -= float64(entry.Amount)
 		}
 	}
 	return balance, nil
@@ -171,6 +172,16 @@ func (s *LedgerService) GetAccount(ctx context.Context, accountId string) (datab
 		}
 		return database.Account{}, err
 	}
-	log.Printf("Retrieved account: %+v\n", acc)
 	return acc, nil
+}
+
+func (s *LedgerService) GetClient(ctx context.Context, clientId string) (database.Client, error) {
+	client, err := s.repo.GetClientByID(ctx, clientId)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return database.Client{}, ErrClientNotFound
+		}
+		return database.Client{}, err
+	}
+	return client, nil
 }

@@ -11,6 +11,7 @@ const (
 	PostTransaction    CommandType = "POST_TRANSACTION"
 	ApplyLoanRepayment CommandType = "APPLY_LOAN_REPAYMENT"
 	UnresolvedPayment  CommandType = "UNRESOLVED_PAYMENT"
+	InvestmentCreated  CommandType = "INVESTMENT_CREATED"
 )
 
 type Entry struct {
@@ -33,6 +34,16 @@ type UnresolvedPaymentPayload struct {
 	PaymentChannel string `json:"payment_channel"`
 	ExternalId     string `json:"external_id"`
 	Reason         string `json:"reason"`
+}
+
+type InvestmentCreatedPayload struct {
+	Id              string  `json:"id"`
+	ClientId        string  `json:"client_id"`
+	Principal       int64   `json:"principal"`
+	AnnualRate      float64 `json:"annual_rate"`
+	Status          string  `json:"status"`
+	AccruedInterest int64   `json:"accrued_interest"`
+	NextAccrualDate string  `json:"next_accrual_date"`
 }
 
 type Payload struct {

@@ -1,4 +1,4 @@
-package loanworker
+package investment
 
 import (
 	"context"
@@ -48,25 +48,21 @@ func main() {
 		log.Fatalf("Failed to declare queue: %v", err)
 	}
 
-	// repo := repository.NewRepository(db)
-
-	worker, err := NewWorker(db, ch, cfg.Queues.Loan, cfg)
+	worker, err := NewWorker(db, ch, cfg)
 	if err != nil {
 		log.Fatalf("Failed to create worker: %v", err)
 	}
 
-	HTTPHandler := httphandler.NewHandler(worker)
-
+	// HTTPHandler
+	handler := httphandler.NewHandler(worker)
 	go func() {
-		log.Println("Starting HTTP server on :8081")
-		if err := http.ListenAndServe(":8081", HTTPHandler); err != nil {
+		log.Println("Starting HTTP server on :8082")
+		if err := http.ListenAndServe(":8082", handler); err != nil {
 			log.Fatalf("Failed to start HTTP server: %v", err)
 		}
-
 	}()
-
 	log.Println("Starting RabbitMQ consumer...")
-	err = StartConsumer(context.Background(), ch, cfg.Queues.Loan, worker)
+	err = StartConsumer(context.Background(), ch, cfg.Queues.Investment, worker)
 	if err != nil {
 		log.Fatalf("Failed to start consumer: %v", err)
 	}

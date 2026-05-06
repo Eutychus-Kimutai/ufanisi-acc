@@ -1,4 +1,4 @@
-package loanworker
+package investment
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-func StartConsumer(ctx context.Context, ch *amqp.Channel, queueName string, worker *LoanWorker) error {
+func StartConsumer(ctx context.Context, ch *amqp.Channel, queueName string, worker *Worker) error {
 	msgs, err := ch.Consume(
 		queueName,
 		"",
@@ -46,6 +46,7 @@ func StartConsumer(ctx context.Context, ch *amqp.Channel, queueName string, work
 				if err != nil {
 					log.Printf("Failed to handle payment event: %v", err)
 					msg.Nack(false, false)
+
 					continue
 				}
 
