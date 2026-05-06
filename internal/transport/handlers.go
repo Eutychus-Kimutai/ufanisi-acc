@@ -3,20 +3,54 @@ package transport
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 
+	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/commands"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/database"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/domain"
+	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/rabbitmq"
+	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/repository"
 	"github.com/google/uuid"
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type Handler struct {
-	ledger *domain.LedgerService
+	ledger       *domain.LedgerService
+	investment   *repository.InvestmentRepository
+	publisher    rabbitmq.Publisher
+	capitalAccID uuid.UUID
 }
 
-func NewHandler(ledger *domain.LedgerService) *Handler {
-	return &Handler{ledger: ledger}
+type CreateInvestmentRequest struct {
+	AccountID          uuid.UUID `json:"account_id"`
+	ClientID           uuid.UUID `json:"client_id"`
+	PrincipalInitial   int64     `json:"principal_initial"`
+	AnnualRate         float64   `json:"annual_rate"`
+	NoticePeriodMonths int       `json:"notice_period_months"`
+}
+
+type CreateInvestmentResponse struct {
+	Investment Investment `json:"investment"`
+}
+
+type Investment struct {
+	ID                 uuid.UUID `json:"id"`
+	ClientID           uuid.UUID `json:"client_id"`
+	PrincipalInitial   int64     `json:"principal_initial"`
+	AnnualRate         float64   `json:"annual_rate"`
+	NextAccrualAt      string    `json:"next_accrual_at"`
+	NoticePeriodMonths int       `json:"notice_period_months"`
+}
+
+func NewHandler(ledger *domain.LedgerService, investment *repository.InvestmentRepository, publisher rabbitmq.Publisher) *Handler {
+	capitalAccID, err := investment.GetInvestmentsCapitalAccount(context.Background())
+	if err != nil {
+		log.Fatalf("Failed to get investor capital account: %v", err)
+	}
+	return &Handler{ledger: ledger, investment: investment, publisher: publisher, capitalAccID: *capitalAccID}
 }
 
 func (h *Handler) getAccountHandler(w http.ResponseWriter, r *http.Request) {
@@ -39,7 +73,7 @@ func (h *Handler) getAccountHandler(w http.ResponseWriter, r *http.Request) {
 
 	response, err := json.Marshal(struct {
 		Account database.Account `json:"account"`
-		Balance int64            `json:"balance"`
+		Balance float64          `json:"balance"`
 	}{
 		Account: acc,
 		Balance: balance,
@@ -152,5 +186,100 @@ func (h *Handler) getTransactionsHandler(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+	w.Write(response)
+}
+
+func (h *Handler) createInvestmentHandler(w http.ResponseWriter, r *http.Request) {
+	type request struct {
+		AccountID          uuid.UUID `json:"account_id"`
+		ClientID           uuid.UUID `json:"client_id"`
+		PrincipalInitial   int64     `json:"principal_initial"`
+		AnnualRate         float64   `json:"annual_rate"`
+		NoticePeriodMonths int       `json:"notice_period_months"`
+	}
+	var req request
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	log.Printf("Received create investment request: %+v\n", req)
+
+	inv, err := h.investment.CreateInvestment(context.Background(), database.Investment{
+		ClientID:         req.ClientID,
+		PrincipalInitial: req.PrincipalInitial,
+	})
+	if err != nil {
+		log.Printf("Failed to create investment: %v\n", err)
+		http.Error(w, "Failed to create investment", http.StatusInternalServerError)
+		return
+	}
+
+	// Create funding transaction
+	fundingTx := domain.Transaction{
+		Reference: fmt.Sprintf("Investment_created_%s", inv.ID),
+		Entries: []domain.Entry{
+			{
+				AccountId: req.AccountID,
+				Amount:    req.PrincipalInitial,
+				Type:      domain.Debit,
+			},
+			{
+				AccountId: h.capitalAccID,
+				Amount:    req.PrincipalInitial,
+				Type:      domain.Credit,
+			},
+		},
+	}
+	err = h.ledger.PostTransaction(context.Background(), fundingTx)
+	if err != nil {
+		log.Printf("Failed to post funding transaction: %v\n", err)
+		http.Error(w, "Failed to post funding transaction", http.StatusInternalServerError)
+		return
+	}
+	rate, err := strconv.ParseFloat(inv.AnnualRate, 64)
+	if err != nil {
+		log.Printf("Failed to parse annual rate: %v\n", err)
+		http.Error(w, "Failed to parse annual rate", http.StatusInternalServerError)
+		return
+	}
+	response, err := json.Marshal(Investment{
+		ID:               inv.ID,
+		ClientID:         inv.ClientID,
+		PrincipalInitial: inv.PrincipalInitial,
+		NextAccrualAt:    inv.NextAccrualAt.Format("2006-01-02"),
+		AnnualRate:       rate,
+	})
+	if err != nil {
+		http.Error(w, "Failed to marshal investment", http.StatusInternalServerError)
+		return
+	}
+
+	event := commands.InvestmentCreatedPayload{
+		Id:              inv.ID.String(),
+		ClientId:        inv.ClientID.String(),
+		Principal:       inv.PrincipalInitial,
+		Status:          inv.Status,
+		AccruedInterest: inv.AccruedInterest,
+		NextAccrualDate: inv.NextAccrualAt.Format("2006-01-02"),
+		AnnualRate:      rate,
+	}
+	cmd, err := commands.NewCommand(commands.InvestmentCreated, event)
+	if err != nil {
+		log.Printf("Failed to create command: %v\n", err)
+		http.Error(w, "Failed to create command", http.StatusInternalServerError)
+		return
+	}
+	err = h.publisher.Publish("", string(commands.InvestmentCreated), false, false, amqp.Publishing{
+		ContentType: "application/json",
+		Body:        []byte(cmd.Payload),
+	})
+	if err != nil {
+		log.Printf("Failed to publish command: %v\n", err)
+		http.Error(w, "Failed to publish command", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
 	w.Write(response)
 }

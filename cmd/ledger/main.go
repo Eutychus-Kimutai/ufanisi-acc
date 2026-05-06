@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/domain"
+	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/rabbitmq"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/repository"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/transport"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/sql/migrations"
@@ -30,6 +31,25 @@ func main() {
 
 	repo := repository.NewRepository(db)
 	ledgerService := domain.NewLedgerService(db, repo)
-	router := transport.NewRouter(ledgerService)
+	investmentRepo := repository.NewInvestmentRepository(db)
+
+	// Initialize RabbitMQ publisher
+	cfg, err := rabbitmq.LoadConfig("config.yaml")
+	if err != nil {
+		log.Fatalf("Failed to load RabbitMQ config: %v", err)
+	}
+	conn, err := rabbitmq.NewConnection(cfg)
+	if err != nil {
+		log.Fatalf("Failed to connect to RabbitMQ: %v", err)
+	}
+	defer conn.Close()
+
+	ch, err := rabbitmq.NewChannel(conn)
+	if err != nil {
+		log.Fatalf("Failed to open RabbitMQ channel: %v", err)
+	} 
+	defer ch.Close()
+
+	router := transport.NewRouter(db, ledgerService, investmentRepo, ch)
 	http.ListenAndServe(":8080", router)
 }

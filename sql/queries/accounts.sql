@@ -4,3 +4,6 @@ RETURNING *;
 
 -- name: GetAccount :one
 SELECT id, name, type, created_at, updated_at FROM accounts WHERE id = $1;
+
+-- name: GetInvestmentAnnualRate :one
+SELECT setting_value FROM accounts WHERE name = 'system.investment_annual_rate';
