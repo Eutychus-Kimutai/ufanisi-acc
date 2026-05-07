@@ -13,12 +13,11 @@ import (
 )
 
 type Account struct {
-	ID           uuid.UUID
-	Name         string
-	Type         string
-	SettingValue sql.NullString
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID        uuid.UUID
+	Name      string
+	Type      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type Client struct {

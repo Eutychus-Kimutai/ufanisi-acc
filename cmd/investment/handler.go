@@ -1,4 +1,4 @@
-package investment
+package main
 
 import (
 	"context"

@@ -1,1 +1,1 @@
-package investment
+package main

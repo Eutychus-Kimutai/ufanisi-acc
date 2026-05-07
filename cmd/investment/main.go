@@ -1,4 +1,4 @@
-package investment
+package main
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
 	httphandler "github.com/Eutychus-Kimutai/ufanisi-acc/cmd/httpHandler"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/rabbitmq"
@@ -55,6 +57,8 @@ func main() {
 
 	// HTTPHandler
 	handler := httphandler.NewHandler(worker)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	go func() {
 		log.Println("Starting HTTP server on :8082")
 		if err := http.ListenAndServe(":8082", handler); err != nil {
@@ -62,8 +66,9 @@ func main() {
 		}
 	}()
 	log.Println("Starting RabbitMQ consumer...")
-	err = StartConsumer(context.Background(), ch, cfg.Queues.Investment, worker)
+	err = StartConsumer(ctx, ch, cfg.Queues.Investment, worker)
 	if err != nil {
 		log.Fatalf("Failed to start consumer: %v", err)
 	}
+	<-ctx.Done()
 }
