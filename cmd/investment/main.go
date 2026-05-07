@@ -25,7 +25,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error opening db: %s", err)
 	}
-	if err = db.Ping(); err != nil {
+	if err = db.PingContext(context.Background()); err != nil {
 		log.Fatalf("Error connecting to db: %s", err)
 	}
 	defer db.Close()

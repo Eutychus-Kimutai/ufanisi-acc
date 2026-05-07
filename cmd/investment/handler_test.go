@@ -90,6 +90,7 @@ func TestHandlePaymentEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HandlePaymentEvent failed: %v", err)
 	}
+	require.Equal(t, 1, len(mockCh.PublishedMessages), "Expected exactly one message to be published")
 	type Msg struct {
 		Payload struct {
 			ClientId        string  `json:"client_id"`
@@ -102,7 +103,6 @@ func TestHandlePaymentEvent(t *testing.T) {
 		} `json:"payload"`
 	}
 	for _, msg := range mockCh.PublishedMessages {
-		require.Equal(t, 1, len(mockCh.PublishedMessages), "Expected exactly one message to be published")
 		assert.Equal(t, worker.cfg.Queues.Investment, msg.Queue, "Expected message to be published to the correct investment queue")
 		log.Printf("Published message payload: %s", string(msg.Payload))
 		var payload Msg
