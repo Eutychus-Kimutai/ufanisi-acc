@@ -61,7 +61,11 @@ func (l *LedgerRepository) GetAccount(ctx context.Context, id uuid.UUID) (databa
 		return database.Account{}, err
 	}
 	log.Printf("Retrieved account: %+v\n", acc)
-	return acc, nil
+	return database.Account{
+		ID:   acc.ID,
+		Name: acc.Name,
+		Type: acc.Type,
+	}, nil
 }
 
 func (l *LedgerRepository) GetTransactionEntries(ctx context.Context, accountId uuid.UUID) ([]database.Entry, error) {
@@ -124,4 +128,13 @@ func (l *LedgerRepository) CreateUnresolvedPayment(ctx context.Context, payment 
 		return err
 	}
 	return nil
+}
+
+func (l *LedgerRepository) GetInvestorCapitalAccount(ctx context.Context) (uuid.UUID, error) {
+	accID, err := l.db.GetInvestorCapitalAccount(ctx)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	log.Printf("Retrieved investor capital account: %+v\n", accID)
+	return accID, nil
 }

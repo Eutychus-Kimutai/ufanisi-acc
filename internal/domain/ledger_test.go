@@ -89,9 +89,9 @@ func TestPostTransaction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get balance: %v", err)
 	}
-	expectedBalance := int64(100)
+	expectedBalance := 100.0
 	if balance != expectedBalance {
-		t.Errorf("Expected balance %d, got %d", expectedBalance, balance)
+		t.Errorf("Expected balance %f, got %f", expectedBalance, balance)
 	}
 
 	// Test get account history

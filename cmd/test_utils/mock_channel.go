@@ -1,4 +1,4 @@
-package loanworker
+package testutils
 
 import (
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -14,11 +14,11 @@ type PublishedMessage struct {
 }
 
 func (m *MockChannel) Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
-
 	m.PublishedMessages = append(m.PublishedMessages, PublishedMessage{
 		Queue:   key,
 		Payload: msg.Body,
 	})
+
 	return nil
 }
 

@@ -4,9 +4,8 @@ type PaymentChannel string
 type DestinationAccount string
 
 const (
-	DestinationAccountMpesa DestinationAccount = "mpesa"
-	DestinationAccountBank  DestinationAccount = "bank"
-	DestinationAccountLoan  DestinationAccount = "loan"
+	DestinationAccountLoan       DestinationAccount = "loan"
+	DestinationAccountInvestment DestinationAccount = "investment"
 )
 
 type PaymentEvent struct {
