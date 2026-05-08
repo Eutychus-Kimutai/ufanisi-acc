@@ -41,11 +41,10 @@ func TestHandlePaymentEvent(t *testing.T) {
 
 	// Setup investor capital account
 	capitalAccId := uuid.New()
-	_, err = db.ExecContext(context.Background(),
-		`INSERT INTO accounts (id, name, type) VALUES ($1, 'Investor Capital Account', 'capital')`,
-		capitalAccId)
+	err = db.QueryRowContext(context.Background(),
+		`SELECT id FROM accounts WHERE name = 'Investor Capital Account'`).Scan(&capitalAccId)
 	if err != nil {
-		t.Fatalf("Failed to insert investor capital account: %v", err)
+		t.Fatalf("Failed to fetch investor capital account: %v", err)
 	}
 	defer db.Exec("DELETE FROM accounts WHERE id = $1", capitalAccId)
 
