@@ -1,5 +1,7 @@
 # Ufanisi Ledger
 
+[![CI](https://github.com/Eutychus-Kimutai/ufanisi-acc/actions/workflows/ci.yaml/badge.svg)](https://github.com/Eutychus-Kimutai/ufanisi-acc/actions/workflows/ci.yaml)
+
 Event-driven ledger system for loans and investments.
 
 ## Overview
@@ -47,7 +49,7 @@ The separation enables:
 
 ### Prerequisites
 
-- Go 1.25+
+- Go 1.21
 - PostgreSQL
 - RabbitMQ
 

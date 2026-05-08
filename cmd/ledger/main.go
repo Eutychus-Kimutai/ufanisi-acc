@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"log"
 	"net/http"
@@ -24,7 +25,7 @@ func main() {
 	}
 	defer db.Close()
 
-	err = migrations.Migrate(db)
+	err = migrations.Migrate(context.Background(), db)
 	if err != nil {
 		log.Fatalf("Failed to run migrations: %v", err)
 	}
@@ -47,7 +48,7 @@ func main() {
 	ch, err := rabbitmq.NewChannel(conn)
 	if err != nil {
 		log.Fatalf("Failed to open RabbitMQ channel: %v", err)
-	} 
+	}
 	defer ch.Close()
 
 	router := transport.NewRouter(db, ledgerService, investmentRepo, ch)

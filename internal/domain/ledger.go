@@ -175,7 +175,7 @@ func (s *LedgerService) GetAccount(ctx context.Context, accountId string) (datab
 	return acc, nil
 }
 
-func (s *LedgerService) GetClient(ctx context.Context, clientId string) (database.Client, error) {
+func (s *LedgerService) GetClient(ctx context.Context, clientId uuid.UUID) (database.Client, error) {
 	client, err := s.repo.GetClientByID(ctx, clientId)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

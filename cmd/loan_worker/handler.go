@@ -3,6 +3,7 @@ package loanworker
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/payment"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/rabbitmq"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/repository"
+	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -100,10 +102,20 @@ func (w *LoanWorker) resolveLoan(ctx context.Context, event payment.PaymentEvent
 		return database.Loan{}, database.Client{}, errors.New("loan is not active")
 	}
 
-	client, err := w.repo.GetClientByID(ctx, event.ClientRef)
+	parsedClientID, err := uuid.Parse(event.ClientRef)
+	if err != nil {
+		return database.Loan{}, database.Client{}, fmt.Errorf("invalid client reference: %v", err)
+	}
+
+	client, err := w.repo.GetClientByID(ctx, parsedClientID)
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			return database.Loan{}, database.Client{}, errors.New("Failed to retrieve client")
+		}
+
+		rawEvent, err := json.Marshal(event)
+		if err != nil {
+			return database.Loan{}, database.Client{}, fmt.Errorf("failed to marshal unresolved payment event: %w", err)
 		}
 
 		err = w.repo.CreateUnresolvedPayment(ctx, database.UnresolvedPayment{
@@ -112,6 +124,7 @@ func (w *LoanWorker) resolveLoan(ctx context.Context, event payment.PaymentEvent
 			PaymentChannel: string(event.PaymentChannel),
 			ExternalID:     event.ExternalId,
 			Reason:         "loan or client not found",
+			RawEvent:       rawEvent,
 		})
 		if err != nil {
 			return database.Loan{}, database.Client{}, fmt.Errorf("Failed to create unresolved payment: %w", err)
