@@ -59,6 +59,9 @@ func TestPostTransaction(t *testing.T) {
 		t.Fatalf("Failed to create account: %v", err)
 	}
 
+	defer db.ExecContext(context.Background(), "DELETE FROM accounts WHERE id = $1", cashAccountId)
+	defer db.ExecContext(context.Background(), "DELETE FROM accounts WHERE id = $1", revenueAccountId)
+
 	// Test balanced transaction
 	err = ledgerService.PostTransaction(context.Background(), Transaction{
 		Reference: "Test Transaction",
