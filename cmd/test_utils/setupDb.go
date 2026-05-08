@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 
+	"github.com/Eutychus-Kimutai/ufanisi-acc/sql/migrations"
 	"github.com/joho/godotenv"
 )
 
@@ -17,5 +18,19 @@ func SetupTestDB() (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err = db.Ping(); err != nil {
+		return nil, err
+	}
+
+	if _, err := db.Exec(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`); err != nil {
+		return nil, err
+	}
+
+	if err = migrations.Migrate(db); err != nil {
+		db.Close()
+		return nil, err
+	}
+
 	return db, nil
+
 }

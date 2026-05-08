@@ -4,18 +4,24 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/database"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/repository"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/sql/migrations"
 	"github.com/google/uuid"
+	"github.com/joho/godotenv"
 )
 
-var connStr = "postgres://eutychuskoech@localhost/ledger_test?sslmode=disable"
+func testConnString() string {
+	godotenv.Load("../../.env")
+	return os.Getenv("DB_URL")
+}
 
 func TestPostTransaction(t *testing.T) {
 	// Setup PostgreSQL in-memory database and repository
+	connStr := testConnString()
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
