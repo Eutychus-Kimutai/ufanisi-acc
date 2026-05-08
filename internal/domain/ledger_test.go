@@ -14,20 +14,26 @@ import (
 	"github.com/joho/godotenv"
 )
 
-func testConnString() string {
+func testConnString(t *testing.T) string {
+	t.Helper()
+	// Load environment variables from .env file
 	godotenv.Load("../../.env")
-	return os.Getenv("DB_URL")
+	DB_URL := os.Getenv("DB_URL")
+	if DB_URL == "" {
+		t.Fatal("DB_URL environment variable is not set")
+	}
+	return DB_URL
 }
 
 func TestPostTransaction(t *testing.T) {
 	// Setup PostgreSQL in-memory database and repository
-	connStr := testConnString()
+	connStr := testConnString(t)
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
 	defer db.Close()
-	if err := migrations.Migrate(db); err != nil {
+	if err := migrations.Migrate(context.Background(), db); err != nil {
 		t.Fatalf("Failed to run migrations: %v", err)
 	}
 	repo := repository.NewRepository(db)

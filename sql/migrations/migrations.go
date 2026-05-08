@@ -1,8 +1,12 @@
 package migrations
 
-import "database/sql"
+import (
+	"context"
+	"database/sql"
+	"fmt"
+)
 
-func Migrate(db *sql.DB) error {
+func Migrate(ctx context.Context, db *sql.DB) error {
 	statements := []string{
 		`CREATE EXTENSION IF NOT EXISTS pgcrypto;`,
 
@@ -115,10 +119,19 @@ func Migrate(db *sql.DB) error {
         );`,
 	}
 
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %v", err)
+	}
+
 	for _, stmt := range statements {
-		if _, err := db.Exec(stmt); err != nil {
-			return err
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("failed to execute statement: %v, error: %v", stmt, err)
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %v", err)
 	}
 
 	return nil
