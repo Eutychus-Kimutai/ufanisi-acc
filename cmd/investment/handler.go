@@ -97,7 +97,12 @@ func (w *Worker) resolveInvestment(ctx context.Context, event payment.PaymentEve
 	if account.Type != "investment" {
 		return nil, nil, errors.New("account is not of type investment")
 	}
-	client, err := w.ledger.GetClient(ctx, event.ClientRef)
+	parsedClientID, err := uuid.Parse(event.ClientRef)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid client reference: %v", err)
+	}
+
+	client, err := w.ledger.GetClient(ctx, parsedClientID)
 	if err != nil {
 		fmt.Printf("Failed to get client: %v", err)
 		return nil, nil, err

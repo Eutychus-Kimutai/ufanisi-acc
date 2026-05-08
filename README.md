@@ -49,7 +49,7 @@ The separation enables:
 
 ### Prerequisites
 
-- Go 1.25+
+- Go 1.21
 - PostgreSQL
 - RabbitMQ
 

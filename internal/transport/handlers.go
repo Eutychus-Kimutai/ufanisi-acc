@@ -54,7 +54,7 @@ func NewHandler(ledger *domain.LedgerService, investment *repository.InvestmentR
 }
 
 func (h *Handler) getAccountHandler(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
+	id := r.URL.Query().Get("id")
 	if id == "" {
 		http.Error(w, "Missing account ID", http.StatusBadRequest)
 		return
@@ -166,7 +166,7 @@ func (h *Handler) transactionsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getTransactionsHandler(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
+	id := r.URL.Query().Get("id")
 	if id == "" {
 		http.Error(w, "Missing account ID", http.StatusBadRequest)
 		return

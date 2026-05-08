@@ -22,7 +22,7 @@ jobs:
     name: Run tests
     runs-on: ubuntu-latest
     env:
-      DB_URL: postgres://postgres:password@localhost:5432/testdb?sslmode=disable
+      DB_URL: postgres://postgres:password@localhost:5432/testdb?sslmode=disable # checkov:skip=CKV_SECRET_4: test-only CI credentials
     services:
       postgres:
         image: postgres:15
