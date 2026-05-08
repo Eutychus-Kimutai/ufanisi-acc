@@ -3,6 +3,7 @@ package loanworker
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -112,12 +113,18 @@ func (w *LoanWorker) resolveLoan(ctx context.Context, event payment.PaymentEvent
 			return database.Loan{}, database.Client{}, errors.New("Failed to retrieve client")
 		}
 
+		rawEvent, err := json.Marshal(event)
+		if err != nil {
+			return database.Loan{}, database.Client{}, fmt.Errorf("failed to marshal unresolved payment event: %w", err)
+		}
+
 		err = w.repo.CreateUnresolvedPayment(ctx, database.UnresolvedPayment{
 			ClientRef:      event.ClientRef,
 			Amount:         event.Amount,
 			PaymentChannel: string(event.PaymentChannel),
 			ExternalID:     event.ExternalId,
 			Reason:         "loan or client not found",
+			RawEvent:       rawEvent,
 		})
 		if err != nil {
 			return database.Loan{}, database.Client{}, fmt.Errorf("Failed to create unresolved payment: %w", err)

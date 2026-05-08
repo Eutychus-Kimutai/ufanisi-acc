@@ -76,19 +76,16 @@ func TestWorker_HandlePaymentEvent(t *testing.T) {
 	event.Destination = payment.DestinationAccount("loan")
 	event.AccountReference = "LN999Mali"
 	err = worker.HandlePaymentEvent(context.Background(), event)
-	t.Logf("Error for non-existent loan: %v", err)
 	require.Error(t, err)
 
 	// Test product type mismatch
 	event.AccountReference = "LN123Invalid"
 	err = worker.HandlePaymentEvent(context.Background(), event)
-	t.Logf("Error for product type mismatch: %v", err)
 	require.Error(t, err)
 
 	// Test non-existent client
 	event.AccountReference = "LN123Mali"
 	event.ClientRef = uuid.New().String()
 	err = worker.HandlePaymentEvent(context.Background(), event)
-	t.Logf("Error for non-existent client: %v", err)
 	require.Error(t, err)
 }
