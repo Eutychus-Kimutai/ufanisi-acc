@@ -14,6 +14,7 @@ type Investment struct {
 	Status          string  `json:"status"`
 	AccruedInterest float64 `json:"accrued_interest"`
 	NextAccrualDate string  `json:"next_accrual_date"`
+	MonthlyRate     float64 `json:"monthly_rate"`
 	CreatedAt       string  `json:"created_at"`
 	UpdatedAt       string  `json:"updated_at"`
 }

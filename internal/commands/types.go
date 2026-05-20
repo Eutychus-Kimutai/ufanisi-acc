@@ -44,7 +44,7 @@ type InvestmentCreatedPayload struct {
 	Id              string  `json:"id"`
 	ClientId        string  `json:"client_id"`
 	Principal       int64   `json:"principal"`
-	AnnualRate      float64 `json:"annual_rate"`
+	MonthlyRate     float64 `json:"monthly_rate"`
 	Status          string  `json:"status"`
 	AccruedInterest int64   `json:"accrued_interest"`
 	NextAccrualDate string  `json:"next_accrual_date"`

@@ -149,7 +149,7 @@ func TestHandlePaymentEvent(t *testing.T) {
 		Payload struct {
 			ClientId        string  `json:"client_id"`
 			Principal       int64   `json:"principal"`
-			AnnualRate      float64 `json:"annual_rate"`
+			MonthlyRate     float64 `json:"monthly_rate"`
 			Status          string  `json:"status"`
 			AccruedInterest float64 `json:"accrued_interest"`
 			NextAccrualDate string  `json:"next_accrual_date"`
@@ -165,7 +165,7 @@ func TestHandlePaymentEvent(t *testing.T) {
 		}
 		assert.Equal(t, loanClientID.String(), payload.Payload.ClientId, "Expected ClientId in published message to match the test client ID")
 		assert.Equal(t, int64(1000), payload.Payload.Principal, "Expected Principal in published message to match the payment event amount")
-		assert.Equal(t, 0.30, payload.Payload.AnnualRate, "Expected AnnualRate in published message to be 0.30")
+		assert.Equal(t, 2.5, payload.Payload.MonthlyRate, "Expected MonthlyRate in published message to be 2.5")
 		assert.Equal(t, "active", payload.Payload.Status, "Expected Status in published message to be 'active'")
 		assert.Equal(t, float64(0), payload.Payload.AccruedInterest, "Expected AccruedInterest in published message to be 0 for a new investment")
 		assert.NotEmpty(t, payload.Payload.NextAccrualDate, "Expected NextAccrualDate in published message to be set")
@@ -181,7 +181,7 @@ func TestHandlePaymentEvent(t *testing.T) {
 		require.NoError(t, err, "Expected to retrieve investment from database without error")
 		assert.Equal(t, loanClientID, inv.ClientID, "Expected ClientID in database to match the test client ID")
 		assert.Equal(t, int64(1000), inv.PrincipalInitial, "Expected PrincipalInitial in database to match the payment event amount")
-		assert.Equal(t, "0.3000", inv.AnnualRate, "Expected AnnualRate in database to be 0.30")
+		assert.Equal(t, "2.5000", inv.MonthlyRate, "Expected MonthlyRate in database to be 2.5")
 		assert.NotEmpty(t, inv.NextAccrualAt, "Expected NextAccrualAt in database to be set")
 
 		// Test ledger balances after processing the payment event
@@ -263,13 +263,13 @@ func TestHandlePaymentEvent(t *testing.T) {
 		PrincipalInitial: int64(1000),
 		PrincipalCurrent: int64(1000),
 		Status:           "active",
-		AnnualRate:       "0.3000",
+		MonthlyRate:      "2.5000",
 		LastAccrualAt:    sql.NullTime{Time: time.Now().AddDate(0, -1, 0), Valid: true},
 		NextAccrualAt:    time.Now().AddDate(0, 1, 0),
 	}
 	_, err = db.ExecContext(context.Background(),
-		`INSERT INTO investments (id, client_id, principal_initial, principal_current, status, annual_rate, last_accrual_at, next_accrual_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-		invID, invClientID, int64(1000), int64(1000), "active", "0.3000", time.Now().AddDate(0, -1, 0), time.Now().AddDate(0, 1, 0))
+		`INSERT INTO investments (id, client_id, principal_initial, principal_current, status, monthly_rate, last_accrual_at, next_accrual_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		invID, invClientID, int64(1000), int64(1000), "active", "2.5000", time.Now().AddDate(0, -1, 0), time.Now().AddDate(0, 1, 0))
 	if err != nil {
 		t.Fatalf("Failed to insert test investment: %v", err)
 	}
@@ -282,8 +282,8 @@ func TestHandlePaymentEvent(t *testing.T) {
 	inv, err := invRepo.GetInvestmentByID(context.Background(), invID)
 	require.NoError(t, err, "Expected to retrieve investment from database without error")
 	assert.Equal(t, int64(25), inv.AccruedInterest, "Expected AccruedInterest in database to be 25 after accrual processing")
-	assert.WithinDuration(t, time.Now(), inv.LastAccrualAt.Time, time.Minute, "Expected LastAccrualAt to be updated to now")
-	assert.WithinDuration(t, time.Now().AddDate(0, 1, 0), inv.NextAccrualAt, time.Minute, "Expected NextAccrualAt to be updated to one month from now")
+	assert.WithinDuration(t, time.Now(), inv.LastAccrualAt.Time, 2*time.Second, "Expected LastAccrualAt to be updated to now")
+	assert.WithinDuration(t, time.Now().AddDate(0, 1, 0), inv.NextAccrualAt, 2*time.Second, "Expected NextAccrualAt to be updated to one month from now")
 
 	var (
 		outboxCount         int

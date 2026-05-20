@@ -32,36 +32,46 @@ func NewAccrualWorker(db *sql.DB, channel Publisher, cfg *rabbitmq.RabbitConfig)
 	}
 }
 
-func (w *AccrualWorker) CalculateInvestmentAccrual(inv *database.Investment, days int) (int64, error) {
-	parsedRate, err := strconv.ParseFloat(inv.AnnualRate, 64)
+func (w *AccrualWorker) CalculateInvestmentAccrual(inv *database.Investment, months int) (int64, error) {
+	parsedRate, err := strconv.ParseFloat(inv.MonthlyRate, 64)
 	if err != nil {
 		return 0, err
 	}
+
 	// Accrual is computed and rounded to the nearest cent in this function.
-	accrualAmount := float64(inv.PrincipalInitial) * parsedRate * float64(days) / 365
+	accrualAmount := float64(inv.PrincipalInitial) * (parsedRate / 100) * float64(months)
 	return int64(math.Round(accrualAmount)), nil
 }
 
 func (w *AccrualWorker) ProcessInvestmentAccrual(ctx context.Context, inv *database.Investment) error {
 	// Calculate days since last accrual
-	elapsedDays := int(time.Since(inv.LastAccrualAt.Time).Hours() / 24)
-	if elapsedDays <= 0 {
+	now := time.Now()
+	monthsElapsed := 0
+	previousAccrual := inv.LastAccrualAt.Time
+	if inv.LastAccrualAt.Valid {
+		previousAccrual = inv.LastAccrualAt.Time
+	} else {
+		previousAccrual = inv.NextAccrualAt.AddDate(0, -1, 0)
+	}
+	for {
+		nextBoundary := previousAccrual.AddDate(0, monthsElapsed+1, 0)
+		if nextBoundary.After(now) {
+			break
+		}
+		monthsElapsed++
+	}
+	if monthsElapsed <= 0 {
 		return nil
 	}
-
-	// Use a 30-day monthly cap to keep accruals consistent across calendar months.
-	accrualDays := elapsedDays
-	if accrualDays > 30 {
-		accrualDays = 30
-	}
-
-	accrualAmount, err := w.CalculateInvestmentAccrual(inv, accrualDays)
+	accrualAmount, err := w.CalculateInvestmentAccrual(inv, monthsElapsed)
 	if err != nil {
 		return fmt.Errorf("error calculating investment accrual: %s", err)
 	}
 	newAccruedTotal := inv.AccruedInterest + accrualAmount
 	// next accrual in a month
-	nextAccrualDate := time.Now().AddDate(0, 1, 0)
+	lastProcessed := previousAccrual.AddDate(0, monthsElapsed, 0)
+	nextAccrualDate := lastProcessed.AddDate(0, 1, 0)
+
 	// Update investment with new accrued interest and next accrual date
 
 	tx, err := w.db.BeginTx(ctx, nil)
@@ -71,11 +81,11 @@ func (w *AccrualWorker) ProcessInvestmentAccrual(ctx context.Context, inv *datab
 	defer tx.Rollback()
 	err = w.repo.UpdateInvestmentTx(ctx, tx, database.Investment{
 		AccruedInterest:  newAccruedTotal,
-		LastAccrualAt:    sql.NullTime{Time: time.Now(), Valid: true},
+		LastAccrualAt:    sql.NullTime{Time: lastProcessed, Valid: true},
 		ID:               inv.ID,
 		ClientID:         inv.ClientID,
 		NextAccrualAt:    nextAccrualDate,
-		UpdatedAt:        time.Now(),
+		UpdatedAt:        now,
 		Status:           inv.Status,
 		PrincipalCurrent: inv.PrincipalCurrent,
 	})

@@ -19,7 +19,7 @@ INSERT INTO investments (
     client_id,
     principal_initial,
     principal_current,
-    annual_rate,
+    monthly_rate,
     status,
     accrued_interest,
     next_accrual_at,
@@ -30,14 +30,14 @@ INSERT INTO investments (
     $1,
     $2,
     $2,
-    0.3,
+    2.5,
     'active',
     0,
     $3,
     NOW(),
     NOW()
 )
-RETURNING id, client_id, principal_initial, principal_current, annual_rate, status, accrued_interest, next_accrual_at, last_accrual_at, created_at, updated_at
+RETURNING id, client_id, principal_initial, principal_current, monthly_rate, status, accrued_interest, next_accrual_at, last_accrual_at, created_at, updated_at
 `
 
 type CreateInvestmentParams struct {
@@ -54,7 +54,7 @@ func (q *Queries) CreateInvestment(ctx context.Context, arg CreateInvestmentPara
 		&i.ClientID,
 		&i.PrincipalInitial,
 		&i.PrincipalCurrent,
-		&i.AnnualRate,
+		&i.MonthlyRate,
 		&i.Status,
 		&i.AccruedInterest,
 		&i.NextAccrualAt,
@@ -66,7 +66,7 @@ func (q *Queries) CreateInvestment(ctx context.Context, arg CreateInvestmentPara
 }
 
 const getDueAccruals = `-- name: GetDueAccruals :many
-SELECT id, client_id, principal_initial, principal_current, annual_rate, status, accrued_interest, next_accrual_at, last_accrual_at, created_at, updated_at FROM investments
+SELECT id, client_id, principal_initial, principal_current, monthly_rate, status, accrued_interest, next_accrual_at, last_accrual_at, created_at, updated_at FROM investments
 WHERE next_accrual_at <= $1 AND status = 'active'
 `
 
@@ -84,7 +84,7 @@ func (q *Queries) GetDueAccruals(ctx context.Context, nextAccrualAt time.Time) (
 			&i.ClientID,
 			&i.PrincipalInitial,
 			&i.PrincipalCurrent,
-			&i.AnnualRate,
+			&i.MonthlyRate,
 			&i.Status,
 			&i.AccruedInterest,
 			&i.NextAccrualAt,
@@ -106,7 +106,7 @@ func (q *Queries) GetDueAccruals(ctx context.Context, nextAccrualAt time.Time) (
 }
 
 const getInvestmentByID = `-- name: GetInvestmentByID :one
-SELECT id, client_id, principal_initial, principal_current, annual_rate, status, accrued_interest, next_accrual_at, last_accrual_at, created_at, updated_at FROM investments WHERE id = $1
+SELECT id, client_id, principal_initial, principal_current, monthly_rate, status, accrued_interest, next_accrual_at, last_accrual_at, created_at, updated_at FROM investments WHERE id = $1
 `
 
 func (q *Queries) GetInvestmentByID(ctx context.Context, id uuid.UUID) (Investment, error) {
@@ -117,7 +117,7 @@ func (q *Queries) GetInvestmentByID(ctx context.Context, id uuid.UUID) (Investme
 		&i.ClientID,
 		&i.PrincipalInitial,
 		&i.PrincipalCurrent,
-		&i.AnnualRate,
+		&i.MonthlyRate,
 		&i.Status,
 		&i.AccruedInterest,
 		&i.NextAccrualAt,
@@ -134,7 +134,6 @@ SET principal_current = $1,
 status = $2,
 updated_at = $3,
 client_id = $4,
-annual_rate = annual_rate,
 accrued_interest = $5,
 next_accrual_at = $6,
 last_accrual_at = $7

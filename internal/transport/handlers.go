@@ -32,7 +32,7 @@ type CreateInvestmentRequest struct {
 	AccountID          uuid.UUID `json:"account_id"`
 	ClientID           uuid.UUID `json:"client_id"`
 	PrincipalInitial   int64     `json:"principal_initial"`
-	AnnualRate         float64   `json:"annual_rate"`
+	MonthlyRate        float64   `json:"monthly_rate"`
 	NoticePeriodMonths int       `json:"notice_period_months"`
 }
 
@@ -44,7 +44,7 @@ type Investment struct {
 	ID                 uuid.UUID `json:"id"`
 	ClientID           uuid.UUID `json:"client_id"`
 	PrincipalInitial   int64     `json:"principal_initial"`
-	AnnualRate         float64   `json:"annual_rate"`
+	MonthlyRate        float64   `json:"monthly_rate"`
 	NextAccrualAt      string    `json:"next_accrual_at"`
 	NoticePeriodMonths int       `json:"notice_period_months"`
 }
@@ -198,7 +198,7 @@ func (h *Handler) createInvestmentHandler(w http.ResponseWriter, r *http.Request
 		AccountID          uuid.UUID `json:"account_id"`
 		ClientID           uuid.UUID `json:"client_id"`
 		PrincipalInitial   int64     `json:"principal_initial"`
-		AnnualRate         float64   `json:"annual_rate"`
+		MonthlyRate        float64   `json:"monthly_rate"`
 		NoticePeriodMonths int       `json:"notice_period_months"`
 	}
 	var req request
@@ -241,10 +241,10 @@ func (h *Handler) createInvestmentHandler(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Failed to post funding transaction", http.StatusInternalServerError)
 		return
 	}
-	rate, err := strconv.ParseFloat(inv.AnnualRate, 64)
+	rate, err := strconv.ParseFloat(inv.MonthlyRate, 64)
 	if err != nil {
-		log.Printf("Failed to parse annual rate: %v\n", err)
-		http.Error(w, "Failed to parse annual rate", http.StatusInternalServerError)
+		log.Printf("Failed to parse monthly rate: %v\n", err)
+		http.Error(w, "Failed to parse monthly rate", http.StatusInternalServerError)
 		return
 	}
 	response, err := json.Marshal(Investment{
@@ -252,7 +252,7 @@ func (h *Handler) createInvestmentHandler(w http.ResponseWriter, r *http.Request
 		ClientID:         inv.ClientID,
 		PrincipalInitial: inv.PrincipalInitial,
 		NextAccrualAt:    inv.NextAccrualAt.Format("2006-01-02"),
-		AnnualRate:       rate,
+		MonthlyRate:      rate,
 	})
 	if err != nil {
 		http.Error(w, "Failed to marshal investment", http.StatusInternalServerError)
@@ -266,7 +266,7 @@ func (h *Handler) createInvestmentHandler(w http.ResponseWriter, r *http.Request
 		Status:          inv.Status,
 		AccruedInterest: inv.AccruedInterest,
 		NextAccrualDate: inv.NextAccrualAt.Format("2006-01-02"),
-		AnnualRate:      rate,
+		MonthlyRate:     rate,
 	}
 	cmd, err := commands.NewCommand(commands.InvestmentCreated, event)
 	if err != nil {

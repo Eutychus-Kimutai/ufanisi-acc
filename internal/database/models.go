@@ -43,7 +43,7 @@ type Investment struct {
 	ClientID         uuid.UUID
 	PrincipalInitial int64
 	PrincipalCurrent int64
-	AnnualRate       string
+	MonthlyRate      string
 	Status           string
 	AccruedInterest  int64
 	NextAccrualAt    time.Time

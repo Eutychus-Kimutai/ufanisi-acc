@@ -57,9 +57,9 @@ func (w *Worker) HandlePaymentEvent(ctx context.Context, event payment.PaymentEv
 		return fmt.Errorf("failed to resolve investment: %v", err)
 	}
 
-	rate, err := strconv.ParseFloat(investment.AnnualRate, 64)
+	rate, err := strconv.ParseFloat(investment.MonthlyRate, 64)
 	if err != nil {
-		return fmt.Errorf("failed to parse annual rate: %v", err)
+		return fmt.Errorf("failed to parse monthly rate: %v", err)
 	}
 	cmd, err := commands.NewCommand(
 		commands.InvestmentCreated,
@@ -70,7 +70,7 @@ func (w *Worker) HandlePaymentEvent(ctx context.Context, event payment.PaymentEv
 			Status:          investment.Status,
 			AccruedInterest: investment.AccruedInterest,
 			NextAccrualDate: investment.NextAccrualAt.Format("2006-01-02"),
-			AnnualRate:      rate,
+			MonthlyRate:     rate,
 		},
 	)
 	if err != nil {

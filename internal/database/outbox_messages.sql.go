@@ -21,7 +21,8 @@ locked_by = $1,
 updated_at = NOW()
 where id in (
     select id from outbox_messages
-    where status IN ('pending', 'failed')
+    where status IN ('pending', 'failed') AND
+    attempts < 5
 ORDER BY created_at ASC
 LIMIT $2
 FOR UPDATE SKIP LOCKED
