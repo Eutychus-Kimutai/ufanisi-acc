@@ -54,7 +54,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create worker: %v", err)
 	}
-
 	// HTTPHandler
 	handler := httphandler.NewHandler(worker)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -70,5 +69,18 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to start consumer: %v", err)
 	}
+	// New channel for scheduler
+	schedulerCh, err := rabbitmq.NewChannel(conn)
+	if err != nil {
+		log.Fatalf("Failed to open channel for scheduler: %v", err)
+	}
+
+	log.Println("Starting interest accrual scheduler...")
+	accrualWorker := NewAccrualWorker(db, schedulerCh, cfg)
+	err = StartScheduler(ctx, worker, accrualWorker)
+	if err != nil {
+		log.Fatalf("Failed to start scheduler: %v", err)
+	}
 	<-ctx.Done()
+
 }

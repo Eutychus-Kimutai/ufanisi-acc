@@ -18,5 +18,6 @@ func NewRouter(db *sql.DB, ledger *domain.LedgerService, investment *repository.
 	router.HandleFunc("POST /accounts", handler.createAccountHandler)
 	router.HandleFunc("POST /transactions", handler.transactionsHandler)
 	router.HandleFunc("POST /investments", handler.createInvestmentHandler)
+	router.HandleFunc("POST /withdrawals", handler.handleRequestWithdrawal)
 	return router
 }

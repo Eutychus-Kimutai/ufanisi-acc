@@ -34,3 +34,19 @@ next_accrual_at = $2,
 last_accrual_at = $3,
 updated_at = $4
 WHERE id = $5;
+
+-- name: UpdateInvestment :exec
+UPDATE investments
+SET principal_current = $1,
+status = $2,
+updated_at = $3,
+client_id = $4,
+annual_rate = 0.3,
+accrued_interest = $5,
+next_accrual_at = $6,
+last_accrual_at = $7
+WHERE id = $8;
+
+-- name: GetDueAccruals :many
+SELECT * FROM investments
+WHERE next_accrual_at <= $1 AND status = 'active';

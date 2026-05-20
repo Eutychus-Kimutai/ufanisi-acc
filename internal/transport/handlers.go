@@ -283,3 +283,40 @@ func (h *Handler) createInvestmentHandler(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusCreated)
 	w.Write(response)
 }
+
+func (h *Handler) handleRequestWithdrawal(w http.ResponseWriter, r *http.Request) {
+	type request struct {
+		InvestmentID uuid.UUID `json:"investment_id"`
+		Amount       int64     `json:"amount"`
+	}
+	var req request
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	log.Printf("Received withdrawal request: %+v\n", req)
+
+	inv, err := h.investment.GetInvestmentByID(context.Background(), req.InvestmentID)
+	if err != nil {
+		log.Printf("Failed to get investment: %v\n", err)
+		http.Error(w, "Failed to get investment", http.StatusInternalServerError)
+		return
+	}
+
+	if inv.PrincipalCurrent < req.Amount {
+		http.Error(w, "Withdrawal amount exceeds current principal", http.StatusBadRequest)
+		return
+	}
+
+	err = h.investment.UpdateInvestment(context.Background(), database.Investment{
+		ID:               inv.ID,
+		ClientID:         inv.ClientID,
+		PrincipalCurrent: inv.PrincipalCurrent - req.Amount,
+	})
+	if err != nil {
+		log.Printf("Failed to update investment: %v\n", err)
+		http.Error(w, "Failed to update investment", http.StatusInternalServerError)
+		return
+	}
+}
