@@ -14,7 +14,7 @@ investment account and credited to aggregate investor capital.
 */
 func FundingTransaction(investorLedgerAccountID, investorCapitalAccountID uuid.UUID, principal int64, investmentID uuid.UUID) domain.Transaction {
 	return domain.Transaction{
-		Reference: fmt.Sprintf("Investment_created_%s", investmentID),
+		Type: fmt.Sprintf("Investment_created_%s", investmentID),
 		Entries: []domain.Entry{
 			{
 				AccountId: investorLedgerAccountID,

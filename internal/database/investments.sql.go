@@ -65,6 +65,46 @@ func (q *Queries) CreateInvestment(ctx context.Context, arg CreateInvestmentPara
 	return i, err
 }
 
+const getDueAccruals = `-- name: GetDueAccruals :many
+SELECT id, client_id, principal_initial, principal_current, annual_rate, status, accrued_interest, next_accrual_at, last_accrual_at, created_at, updated_at FROM investments
+WHERE next_accrual_at <= $1 AND status = 'active'
+`
+
+func (q *Queries) GetDueAccruals(ctx context.Context, nextAccrualAt time.Time) ([]Investment, error) {
+	rows, err := q.db.QueryContext(ctx, getDueAccruals, nextAccrualAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Investment
+	for rows.Next() {
+		var i Investment
+		if err := rows.Scan(
+			&i.ID,
+			&i.ClientID,
+			&i.PrincipalInitial,
+			&i.PrincipalCurrent,
+			&i.AnnualRate,
+			&i.Status,
+			&i.AccruedInterest,
+			&i.NextAccrualAt,
+			&i.LastAccrualAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getInvestmentByID = `-- name: GetInvestmentByID :one
 SELECT id, client_id, principal_initial, principal_current, annual_rate, status, accrued_interest, next_accrual_at, last_accrual_at, created_at, updated_at FROM investments WHERE id = $1
 `
@@ -86,6 +126,44 @@ func (q *Queries) GetInvestmentByID(ctx context.Context, id uuid.UUID) (Investme
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updateInvestment = `-- name: UpdateInvestment :exec
+UPDATE investments
+SET principal_current = $1,
+status = $2,
+updated_at = $3,
+client_id = $4,
+annual_rate = annual_rate,
+accrued_interest = $5,
+next_accrual_at = $6,
+last_accrual_at = $7
+WHERE id = $8
+`
+
+type UpdateInvestmentParams struct {
+	PrincipalCurrent int64
+	Status           string
+	UpdatedAt        time.Time
+	ClientID         uuid.UUID
+	AccruedInterest  int64
+	NextAccrualAt    time.Time
+	LastAccrualAt    sql.NullTime
+	ID               uuid.UUID
+}
+
+func (q *Queries) UpdateInvestment(ctx context.Context, arg UpdateInvestmentParams) error {
+	_, err := q.db.ExecContext(ctx, updateInvestment,
+		arg.PrincipalCurrent,
+		arg.Status,
+		arg.UpdatedAt,
+		arg.ClientID,
+		arg.AccruedInterest,
+		arg.NextAccrualAt,
+		arg.LastAccrualAt,
+		arg.ID,
+	)
+	return err
 }
 
 const updateInvestmentAccrual = `-- name: UpdateInvestmentAccrual :exec

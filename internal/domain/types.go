@@ -15,8 +15,8 @@ type Account struct {
 
 type Transaction struct {
 	Id        uuid.UUID
-	Reference string
 	CreatedAt time.Time
+	Type     string
 	Entries   []Entry
 }
 

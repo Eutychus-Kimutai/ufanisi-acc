@@ -133,8 +133,8 @@ func (c *Consumer) processMessage(msg amqp.Delivery) error {
 	switch cmd.Type {
 	case commands.PostTransaction:
 		return c.ledger.PostTransaction(context.Background(), domain.Transaction{
-			Reference: payload.Reference,
-			Entries:   entries})
+			Type:    payload.Reference,
+			Entries: entries})
 	default:
 		log.Printf("Recieved unhandled command type: %s", cmd.Type)
 		return fmt.Errorf("Unknown command type: %s", cmd.Type)

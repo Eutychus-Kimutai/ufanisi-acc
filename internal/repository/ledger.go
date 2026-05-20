@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"log"
 	"time"
 
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/database"
@@ -31,16 +30,14 @@ func NewDB(connStr string) (*sql.DB, *LedgerRepository, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	LedgerRepository := &LedgerRepository{
+	ledgerRepository := &LedgerRepository{
 		db: database.New(openDb),
 	}
-	log.Printf("Connected to database: %s\n", connStr)
-	log.Printf("LedgerRepository initialized: %+v\n", LedgerRepository)
-	return openDb, LedgerRepository, nil
+	return openDb, ledgerRepository, nil
 }
 
 func (l *LedgerRepository) CreateAccount(ctx context.Context, account database.Account) error {
-	acc, err := l.db.CreateAccount(ctx, database.CreateAccountParams{
+	_, err := l.db.CreateAccount(ctx, database.CreateAccountParams{
 		ID:   account.ID,
 		Name: account.Name,
 		Type: string(account.Type),
@@ -48,7 +45,6 @@ func (l *LedgerRepository) CreateAccount(ctx context.Context, account database.A
 	if err != nil {
 		return err
 	}
-	log.Printf("Created account: %+v\n", acc)
 	return nil
 }
 
@@ -60,7 +56,6 @@ func (l *LedgerRepository) GetAccount(ctx context.Context, id uuid.UUID) (databa
 		}
 		return database.Account{}, err
 	}
-	log.Printf("Retrieved account: %+v\n", acc)
 	return database.Account{
 		ID:   acc.ID,
 		Name: acc.Name,
@@ -82,16 +77,15 @@ func (l *LedgerRepository) GetTransactionEntries(ctx context.Context, accountId 
 			Type:          entry.Type,
 		}
 	}
-	log.Printf("Retrieved entries for account %s: %+v\n", accountId, entries)
 	return entries, nil
 }
 
 func (l *LedgerRepository) CreateTransaction(ctx context.Context, transaction database.Transaction) error {
 	_, err := l.db.CreateTransaction(ctx, database.CreateTransactionParams{
 		ID:        transaction.ID,
-		Reference: transaction.Reference,
 		CreatedAt: transaction.CreatedAt,
 		UpdatedAt: time.Now(),
+		Type:      transaction.Type,
 	})
 	if err != nil {
 		return err
@@ -99,15 +93,13 @@ func (l *LedgerRepository) CreateTransaction(ctx context.Context, transaction da
 	return nil
 }
 
-func (l *LedgerRepository) CreateEntry(ctx context.Context, entry database.Entry) error {
+func (l *LedgerRepository) CreateEntry(ctx context.Context, entry database.CreateEntryParams) error {
 	_, err := l.db.CreateEntry(ctx, database.CreateEntryParams{
 		ID:            entry.ID,
 		AccountID:     entry.AccountID,
 		TransactionID: entry.TransactionID,
 		Amount:        entry.Amount,
 		Type:          entry.Type,
-		CreatedAt:     entry.CreatedAt,
-		UpdatedAt:     entry.UpdatedAt,
 	})
 	if err != nil {
 		return err
@@ -130,11 +122,47 @@ func (l *LedgerRepository) CreateUnresolvedPayment(ctx context.Context, payment 
 	return nil
 }
 
-func (l *LedgerRepository) GetInvestorCapitalAccount(ctx context.Context) (uuid.UUID, error) {
-	accID, err := l.db.GetInvestorCapitalAccount(ctx)
+func (l *LedgerRepository) GetCapitalAccount(ctx context.Context) (uuid.UUID, error) {
+	accID, err := l.db.GetCapitalAccount(ctx)
 	if err != nil {
 		return uuid.Nil, err
 	}
-	log.Printf("Retrieved investor capital account: %+v\n", accID)
 	return accID, nil
+}
+
+func (l *LedgerRepository) GetInvestorFundsAccount(ctx context.Context) (uuid.UUID, error) {
+	accID, err := l.db.GetInvestorFundsAccount(ctx)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return accID, nil
+}
+
+func (l *LedgerRepository) CreateEntryWithTx(ctx context.Context, tx *sql.Tx, entry database.Entry) error {
+	qtx := l.db.WithTx(tx)
+	_, err := qtx.CreateEntry(ctx, database.CreateEntryParams{
+		ID:            entry.ID,
+		AccountID:     entry.AccountID,
+		TransactionID: entry.TransactionID,
+		Amount:        entry.Amount,
+		Type:          entry.Type,
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (l *LedgerRepository) CreateTransactionWithTx(ctx context.Context, tx *sql.Tx, transaction database.Transaction) error {
+	qtx := l.db.WithTx(tx)
+	_, err := qtx.CreateTransaction(ctx, database.CreateTransactionParams{
+		ID:        transaction.ID,
+		Type:      transaction.Type,
+		CreatedAt: transaction.CreatedAt,
+		UpdatedAt: time.Now(),
+	})
+	if err != nil {
+		return err
+	}
+	return nil
 }

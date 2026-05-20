@@ -2,11 +2,13 @@ package transport
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/commands"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/database"
@@ -22,6 +24,8 @@ type Handler struct {
 	investment   *repository.InvestmentRepository
 	publisher    rabbitmq.Publisher
 	capitalAccID uuid.UUID
+	outboxRepo   *repository.OutboxRepository
+	db           *sql.DB
 }
 
 type CreateInvestmentRequest struct {
@@ -45,12 +49,12 @@ type Investment struct {
 	NoticePeriodMonths int       `json:"notice_period_months"`
 }
 
-func NewHandler(ledger *domain.LedgerService, investment *repository.InvestmentRepository, publisher rabbitmq.Publisher) *Handler {
-	capitalAccID, err := investment.GetInvestmentsCapitalAccount(context.Background())
+func NewHandler(ledger *domain.LedgerService, investment *repository.InvestmentRepository, publisher rabbitmq.Publisher, db *sql.DB) *Handler {
+	capitalAccID, err := investment.GetCapitalAccount(context.Background())
 	if err != nil {
-		log.Fatalf("Failed to get investor capital account: %v", err)
+		log.Fatalf("Failed to get capital account: %v", err)
 	}
-	return &Handler{ledger: ledger, investment: investment, publisher: publisher, capitalAccID: *capitalAccID}
+	return &Handler{ledger: ledger, investment: investment, publisher: publisher, capitalAccID: *capitalAccID, db: db, outboxRepo: repository.NewOutboxRepository(db)}
 }
 
 func (h *Handler) getAccountHandler(w http.ResponseWriter, r *http.Request) {
@@ -123,8 +127,8 @@ func (h *Handler) createAccountHandler(w http.ResponseWriter, r *http.Request) {
 }
 func (h *Handler) transactionsHandler(w http.ResponseWriter, r *http.Request) {
 	type request struct {
-		Reference string `json:"reference"`
-		Entries   []struct {
+		Type    string `json:"type"`
+		Entries []struct {
 			TransactionId uuid.UUID `json:"transaction_id"`
 			AccountId     uuid.UUID `json:"account_id"`
 			Amount        int64     `json:"amount"`
@@ -150,9 +154,9 @@ func (h *Handler) transactionsHandler(w http.ResponseWriter, r *http.Request) {
 
 	}
 	err := h.ledger.PostTransaction(context.Background(), domain.Transaction{
-		Id:        id,
-		Reference: req.Reference,
-		Entries:   entries,
+		Id:      id,
+		Type:    req.Type,
+		Entries: entries,
 	})
 	if err != nil {
 		log.Printf("Failed to post transaction: %v\n", err)
@@ -217,7 +221,7 @@ func (h *Handler) createInvestmentHandler(w http.ResponseWriter, r *http.Request
 
 	// Create funding transaction
 	fundingTx := domain.Transaction{
-		Reference: fmt.Sprintf("Investment_created_%s", inv.ID),
+		Type: fmt.Sprintf("Investment_created_%s", inv.ID),
 		Entries: []domain.Entry{
 			{
 				AccountId: req.AccountID,
@@ -282,4 +286,92 @@ func (h *Handler) createInvestmentHandler(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	w.Write(response)
+}
+
+func (h *Handler) handleRequestWithdrawal(w http.ResponseWriter, r *http.Request) {
+	type request struct {
+		InvestmentID uuid.UUID `json:"investment_id"`
+		Amount       int64     `json:"amount"`
+	}
+	var req request
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	log.Printf("Received withdrawal request: %+v\n", req)
+	if req.Amount <= 0 {
+		http.Error(w, "Withdrawal amount must be greater than zero", http.StatusBadRequest)
+		return
+	}
+	inv, err := h.investment.GetInvestmentByID(context.Background(), req.InvestmentID)
+	if err != nil {
+		log.Printf("Failed to get investment: %v\n", err)
+		http.Error(w, "Failed to get investment", http.StatusInternalServerError)
+		return
+	}
+	if inv.PrincipalCurrent < req.Amount {
+		http.Error(w, "Withdrawal amount exceeds current principal", http.StatusBadRequest)
+		return
+	}
+
+	tx, err := h.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		log.Printf("Failed to begin transaction: %v\n", err)
+		http.Error(w, "Failed to process withdrawal request", http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	// Generate withdrawal request command
+	withdrawal, err := h.investment.CreateInvestmentWithdrawal(context.Background(), database.WithdrawalsPayable{
+		InvestmentID:       req.InvestmentID,
+		Amount:             req.Amount,
+		RequestedAt:        time.Now(),
+		NoticePeriodMonths: 1,
+		Status:             "pending",
+	})
+	if err != nil {
+		log.Printf("Failed to create withdrawal request: %v\n", err)
+		http.Error(w, "Failed to create withdrawal request", http.StatusInternalServerError)
+		return
+	}
+	cmd := commands.InvestmentWithdrawalRequestedPayload{
+		InvestmentId: req.InvestmentID.String(),
+		WithdrawalId: withdrawal.ID.String(),
+		Amount:       req.Amount,
+		RequestedAt:  time.Now().String(),
+		EligibleAt:   time.Now().AddDate(0, 1, 0).String(),
+	}
+	command, err := commands.NewCommand(commands.InvestmentWithdrawalRequested, cmd)
+	if err != nil {
+		log.Printf("Failed to create command: %v\n", err)
+		http.Error(w, "Failed to create command", http.StatusInternalServerError)
+		return
+	}
+
+	// Create oubox message for withdrawal request command
+	outboxMsg := database.OutboxMessage{
+		AggregateID:   req.InvestmentID,
+		AggregateType: "withdrawal_request",
+		CommandType:   string(commands.InvestmentWithdrawalRequested),
+		Payload:       command.Payload,
+		Status:        "pending",
+	}
+
+	err = h.outboxRepo.CreateOutboxMessage(r.Context(), outboxMsg)
+	if err != nil {
+		log.Printf("Failed to create outbox message: %v\n", err)
+		http.Error(w, "Failed to create outbox message", http.StatusInternalServerError)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		log.Printf("Failed to commit transaction: %v\n", err)
+		http.Error(w, "Failed to process withdrawal request", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"message": "Withdrawal request created successfully"}`))
 }

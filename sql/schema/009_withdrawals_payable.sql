@@ -1,5 +1,5 @@
 -- +goose Up
-CREATE TABLE IF NOT EXISTS investment_withdrawals (
+CREATE TABLE IF NOT EXISTS withdrawals_payable (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     investment_id UUID NOT NULL 
@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS investment_withdrawals (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_investment_withdrawals_investments ON investment_withdrawals(investment_id);
+CREATE INDEX idx_withdrawal_payable ON withdrawals_payable(investment_id);
 
 -- +goose Down
-DROP TABLE IF EXISTS investment_withdrawals;
+DROP TABLE IF EXISTS withdrawals_payable;
