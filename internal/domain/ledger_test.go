@@ -3,7 +3,6 @@ package domain
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"os"
 	"testing"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/Eutychus-Kimutai/ufanisi-acc/sql/migrations"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
+	"github.com/stretchr/testify/require"
 )
 
 func testConnString(t *testing.T) string {
@@ -29,13 +29,9 @@ func TestPostTransaction(t *testing.T) {
 	// Setup PostgreSQL in-memory database and repository
 	connStr := testConnString(t)
 	db, err := sql.Open("postgres", connStr)
-	if err != nil {
-		t.Fatalf("Failed to open database: %v", err)
-	}
+	require.NoError(t, err, "Failed to connect to database")
 	defer db.Close()
-	if err := migrations.Migrate(context.Background(), db); err != nil {
-		t.Fatalf("Failed to run migrations: %v", err)
-	}
+	require.NoError(t, migrations.Migrate(context.Background(), db), "Failed to run migrations")
 	repo := repository.NewRepository(db)
 	ledgerService := NewLedgerService(db, repo)
 
@@ -47,17 +43,13 @@ func TestPostTransaction(t *testing.T) {
 		Name: "Cash",
 		Type: "Asset",
 	})
-	if err != nil {
-		t.Fatalf("Failed to create account: %v", err)
-	}
+	require.NoError(t, err, "Failed to create account: Cash")
 	err = repo.CreateAccount(context.Background(), database.Account{
 		ID:   revenueAccountId,
 		Name: "Revenue",
 		Type: "Income",
 	})
-	if err != nil {
-		t.Fatalf("Failed to create account: %v", err)
-	}
+	require.NoError(t, err, "Failed to create account: Revenue")
 
 	defer db.ExecContext(context.Background(), "DELETE FROM accounts WHERE id = $1", cashAccountId)
 	defer db.ExecContext(context.Background(), "DELETE FROM accounts WHERE id = $1", revenueAccountId)
@@ -92,7 +84,6 @@ func TestPostTransaction(t *testing.T) {
 		t.Fatalf("Failed to get transaction entries: %v", err)
 	}
 	result := make([]Entry, len(entries))
-	fmt.Printf("Results: %v\n", result)
 	for i, e := range entries {
 		result[i] = Entry{
 			AccountId: e.AccountID,
@@ -101,23 +92,24 @@ func TestPostTransaction(t *testing.T) {
 		}
 	}
 	balance, err := ledgerService.GetBalance(context.Background(), cashAccountId)
-	if err != nil {
-		t.Fatalf("Failed to get balance: %v", err)
-	}
+	require.NoError(t, err, "Failed to get account balance")
 	expectedBalance := 100.0
-	if balance != expectedBalance {
-		t.Errorf("Expected balance %f, got %f", expectedBalance, balance)
-	}
+	require.Equal(t, expectedBalance, balance, "Expected balance to be %.2f, got %.2f", expectedBalance, balance)
 
 	// Test get account history
 	history, err := ledgerService.GetAccountHistory(context.Background(), cashAccountId.String())
+	require.NoError(t, err, "Failed to get account history")
+	require.Len(t, history, 1, "Expected account history to have 1 entry")
+	require.Equal(t, cashAccountId, history[0].AccountId, "Expected account ID to match")
+	require.Equal(t, int64(100.0), history[0].Amount, "Expected amount to match")
+	require.Equal(t, Debit, history[0].Type, "Expected entry type to be Debit")
+
+	// Test transfer between accounts
+	err = ledgerService.Transfer(context.Background(), cashAccountId, revenueAccountId, 50, "Transfer Test")
 	if err != nil {
-		t.Fatalf("Failed to get account history: %v", err)
+		t.Fatalf("Failed to transfer between accounts: %v", err)
 	}
-	if len(history) != 1 {
-		t.Errorf("Expected 1 entry in account history, got %d", len(history))
-	}
-	if history[0].Amount != 100 || history[0].Type != Debit {
-		t.Errorf("Unexpected entry in account history: %+v", history[0])
-	}
+	cashBalance, err := ledgerService.GetBalance(context.Background(), cashAccountId)
+	require.NoError(t, err, "Failed to get cash account balance")
+	require.Equal(t, 50.0, cashBalance, "Expected cash account balance to be 50 after transfer")
 }

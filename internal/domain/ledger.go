@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"log"
 	"time"
 
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/database"
@@ -32,7 +31,6 @@ func (s *LedgerService) CreateAccount(ctx context.Context, account database.Acco
 	if err != nil {
 		return err
 	}
-	log.Printf("Created account: %+v\n", account)
 	return nil
 }
 
@@ -58,7 +56,7 @@ func (s *LedgerService) PostTransaction(ctx context.Context, transaction Transac
 	transactionId := uuid.New()
 	createdAt := time.Now()
 	// Create transaction
-	err = s.repo.CreateTransaction(ctx, database.Transaction{
+	err = s.repo.CreateTransactionWithTx(ctx, tx, database.Transaction{
 		ID:        transactionId,
 		Reference: transaction.Reference,
 		CreatedAt: createdAt,
@@ -75,11 +73,10 @@ func (s *LedgerService) PostTransaction(ctx context.Context, transaction Transac
 			tx.Rollback()
 			return ErrAccountNotFound
 		}
-		log.Printf("Verified account exists: %s\n", entry.AccountId)
 	}
 	// Create entries
 	for _, entry := range transaction.Entries {
-		err = s.repo.CreateEntry(ctx, database.Entry{
+		err = s.repo.CreateEntryWithTx(ctx, tx, database.Entry{
 			ID:            uuid.New(),
 			AccountID:     entry.AccountId,
 			TransactionID: transactionId,
@@ -93,12 +90,10 @@ func (s *LedgerService) PostTransaction(ctx context.Context, transaction Transac
 			return err
 		}
 	}
-	log.Printf("Created entries for transaction: %s\n", transactionId)
 	err = tx.Commit()
 	if err != nil {
 		return err
 	}
-	log.Printf("Committed transaction: %s\n", transactionId)
 	return nil
 }
 
@@ -116,7 +111,6 @@ func (s *LedgerService) CreateEntry(ctx context.Context, entry database.Entry) e
 	if err != nil {
 		return err
 	}
-	log.Printf("Created entry: %+v\n", entry)
 	return nil
 }
 
@@ -184,4 +178,69 @@ func (s *LedgerService) GetClient(ctx context.Context, clientId uuid.UUID) (data
 		return database.Client{}, err
 	}
 	return client, nil
+}
+
+// Transfer funds between accounts
+func (s *LedgerService) Transfer(ctx context.Context, fromAccountId, toAccountId uuid.UUID, amount int64, reference string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	// Verify accounts exist
+	_, err = s.repo.GetAccount(ctx, fromAccountId)
+	if err != nil {
+		tx.Rollback()
+		return ErrAccountNotFound
+	}
+	_, err = s.repo.GetAccount(ctx, toAccountId)
+	if err != nil {
+		tx.Rollback()
+		return ErrAccountNotFound
+	}
+	transactionId := uuid.New()
+	createdAt := time.Now()
+	// Create transaction
+	err = s.repo.CreateTransactionWithTx(ctx, tx, database.Transaction{
+		ID:        transactionId,
+		Reference: reference,
+		CreatedAt: createdAt,
+		UpdatedAt: createdAt,
+	})
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	// Create debit entry
+	err = s.repo.CreateEntryWithTx(ctx, tx, database.Entry{
+		ID:            uuid.New(),
+		AccountID:     fromAccountId,
+		TransactionID: transactionId,
+		Amount:        amount,
+		Type:          "Credit",
+		CreatedAt:     createdAt,
+		UpdatedAt:     createdAt,
+	})
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	// Create credit entry
+	err = s.repo.CreateEntryWithTx(ctx, tx, database.Entry{
+		ID:            uuid.New(),
+		AccountID:     toAccountId,
+		TransactionID: transactionId,
+		Amount:        amount,
+		Type:          "Debit",
+		CreatedAt:     createdAt,
+		UpdatedAt:     createdAt,
+	})
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+	return nil
 }

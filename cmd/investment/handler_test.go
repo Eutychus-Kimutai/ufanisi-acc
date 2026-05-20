@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
-	"log"
 	"testing"
+	"time"
 
 	testutils "github.com/Eutychus-Kimutai/ufanisi-acc/cmd/test_utils"
+	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/database"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/payment"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/rabbitmq"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/repository"
@@ -63,13 +65,19 @@ func TestHandlePaymentEvent(t *testing.T) {
 	mockCh := &testutils.MockChannel{}
 	worker, err := NewWorker(db, mockCh, &rabbitmq.RabbitConfig{
 		Queues: struct {
-			Loan       string `yaml:"loan"`
-			Investment string `yaml:"investment"`
-			Unresolved string `yaml:"unresolved"`
+			Loan             string `yaml:"loan"`
+			Investment       string `yaml:"investment"`
+			Unresolved       string `yaml:"unresolved"`
+			AccrualNotice    string `yaml:"accrual_notice"`
+			WithdrawalNotice string `yaml:"withdrawal_notice"`
+			MaturityNotice   string `yaml:"maturity_notice"`
 		}{
-			Unresolved: "unresolved_payments",
-			Loan:       "loans",
-			Investment: "investments",
+			Unresolved:       "unresolved_payments",
+			Loan:             "loans",
+			Investment:       "investments",
+			AccrualNotice:    "accrual_notices",
+			WithdrawalNotice: "withdrawal_notices",
+			MaturityNotice:   "maturity_notices",
 		},
 	})
 	if err != nil {
@@ -103,13 +111,11 @@ func TestHandlePaymentEvent(t *testing.T) {
 	}
 	for _, msg := range mockCh.PublishedMessages {
 		assert.Equal(t, worker.cfg.Queues.Investment, msg.Queue, "Expected message to be published to the correct investment queue")
-		log.Printf("Published message payload: %s", string(msg.Payload))
 		var payload Msg
 		err := json.Unmarshal(msg.Payload, &payload)
 		if err != nil {
 			t.Fatalf("Failed to unmarshal published message payload: %v", err)
 		}
-		log.Printf("Unmarshaled payload: %+v", payload)
 		assert.Equal(t, loanClientID.String(), payload.Payload.ClientId, "Expected ClientId in published message to match the test client ID")
 		assert.Equal(t, int64(1000), payload.Payload.Principal, "Expected Principal in published message to match the payment event amount")
 		assert.Equal(t, 0.30, payload.Payload.AnnualRate, "Expected AnnualRate in published message to be 0.30")
@@ -130,6 +136,8 @@ func TestHandlePaymentEvent(t *testing.T) {
 		assert.Equal(t, "0.3000", inv.AnnualRate, "Expected AnnualRate in database to be 0.30")
 		assert.NotEmpty(t, inv.NextAccrualAt, "Expected NextAccrualAt in database to be set")
 
+		// Clean up channel messages for next tests
+		mockCh.PublishedMessages = nil
 	}
 
 	// Test invalid destination
@@ -166,5 +174,80 @@ func TestHandlePaymentEvent(t *testing.T) {
 		t.Fatalf("Expected error for invalid client reference, got nil")
 	}
 	require.Error(t, err)
+
+	// Test accrual processing
+	accrualWorker := NewAccrualWorker(db, mockCh, &rabbitmq.RabbitConfig{
+		Queues: struct {
+			Loan             string `yaml:"loan"`
+			Investment       string `yaml:"investment"`
+			Unresolved       string `yaml:"unresolved"`
+			AccrualNotice    string `yaml:"accrual_notice"`
+			WithdrawalNotice string `yaml:"withdrawal_notice"`
+			MaturityNotice   string `yaml:"maturity_notice"`
+		}{
+			Unresolved:       "unresolved_payments",
+			Loan:             "loans",
+			Investment:       "investments",
+			AccrualNotice:    "accrual_notices",
+			WithdrawalNotice: "withdrawal_notices",
+			MaturityNotice:   "maturity_notices",
+		},
+	})
+	invId := uuid.New()
+	invClientID := uuid.New()
+	_, err = db.ExecContext(context.Background(),
+		`INSERT INTO clients (id, name, client_type) VALUES ($1, 'Accrual Test Client', 'investment')`, invClientID)
+	if err != nil {
+		t.Fatalf("Failed to insert test client: %v", err)
+	}
+	defer db.Exec("DELETE FROM clients WHERE id = $1", invClientID)
+	investmentForAccrual := database.Investment{
+		ID:               invId,
+		ClientID:         invClientID,
+		PrincipalInitial: int64(1000),
+		PrincipalCurrent: int64(1000),
+		Status:           "active",
+		AnnualRate:       "0.3000",
+		LastAccrualAt:    sql.NullTime{Time: time.Now().AddDate(0, -1, 0), Valid: true},
+		NextAccrualAt:    time.Now().AddDate(0, 1, 0),
+	}
+	_, err = db.ExecContext(context.Background(),
+		`INSERT INTO investments (id, client_id, principal_initial, principal_current, status, annual_rate, last_accrual_at, next_accrual_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		invId, invClientID, int64(1000), int64(1000), "active", "0.3000", time.Now().AddDate(0, -1, 0), time.Now().AddDate(0, 1, 0))
+	if err != nil {
+		t.Fatalf("Failed to insert test investment: %v", err)
+	}
+	defer db.Exec("DELETE FROM investments WHERE id = $1", invId)
+	err = accrualWorker.ProcessInvestmentAccrual(context.Background(), &investmentForAccrual)
+	require.NoError(t, err, "Expected to create accrual worker without error")
+
+	// Verify the investment accrual has correct values
+	invRepo := repository.NewInvestmentRepository(db)
+	inv, err := invRepo.GetInvestmentByID(context.Background(), invId)
+	require.NoError(t, err, "Expected to retrieve investment from database without error")
+	assert.Equal(t, int64(24), inv.AccruedInterest, "Expected AccruedInterest in database to be 24 after accrual processing")
+	assert.WithinDuration(t, time.Now(), inv.LastAccrualAt.Time, time.Minute, "Expected LastAccrualAt to be updated to now")
+	assert.WithinDuration(t, time.Now().AddDate(0, 1, 0), inv.NextAccrualAt, time.Minute, "Expected NextAccrualAt to be updated to one month from now")
+
+	// Verify accrual notice message was published
+	require.Equal(t, 1, len(mockCh.PublishedMessages), "Expected exactly one message to be published after accrual processing")
+	type AccrualNoticeMsg struct {
+		InvestmentId    string `json:"investment_id"`
+		AccrualAmount   int64  `json:"accrual_amount"`
+		NewAccruedTotal int64  `json:"new_accrued_total"`
+		NextAccrualDate string `json:"next_accrual_date"`
+	}
+	for _, msg := range mockCh.PublishedMessages {
+		assert.Equal(t, accrualWorker.cfg.Queues.AccrualNotice, msg.Queue, "Expected message to be published to the correct accrual notice queue")
+
+		var payload AccrualNoticeMsg
+		err := json.Unmarshal(msg.Payload, &payload)
+		require.NoError(t, err, "Expected to unmarshal published message payload without error")
+
+		assert.Equal(t, invId.String(), payload.InvestmentId, "Expected InvestmentId in published message to match the test investment ID")
+		assert.Equal(t, int64(24), payload.AccrualAmount, "Expected AccrualAmount in published message to match the accrual")
+		assert.Equal(t, int64(24), payload.NewAccruedTotal, "Expected NewAccruedTotal in published message to match the accrual")
+		assert.NotEmpty(t, payload.NextAccrualDate, "Expected NextAccrualDate in published message to be set")
+	}
 
 }

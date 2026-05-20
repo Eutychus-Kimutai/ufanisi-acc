@@ -7,9 +7,12 @@ type RabbitConfig struct {
 	Password string `yaml:"password"`
 	Vhost    string `yaml:"vhost"`
 	Queues   struct {
-		Loan       string `yaml:"loan"`
-		Investment string `yaml:"investment"`
-		Unresolved string `yaml:"unresolved"`
+		Loan             string `yaml:"loan"`
+		Investment       string `yaml:"investment"`
+		Unresolved       string `yaml:"unresolved"`
+		AccrualNotice    string `yaml:"accrual_notice"`
+		WithdrawalNotice string `yaml:"withdrawal_notice"`
+		MaturityNotice   string `yaml:"maturity_notice"`
 	} `yaml:"queues"`
 	Retry struct {
 		MaxRetries   int `yaml:"max_retries"`
