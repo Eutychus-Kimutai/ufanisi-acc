@@ -60,18 +60,6 @@ type InvestmentAccrual struct {
 	CreatedAt        time.Time
 }
 
-type InvestmentWithdrawal struct {
-	ID                 uuid.UUID
-	InvestmentID       uuid.UUID
-	Amount             int64
-	NoticePeriodMonths int32
-	RequestedAt        time.Time
-	EligibleAt         time.Time
-	Status             string
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
-}
-
 type Loan struct {
 	ID                uuid.UUID
 	ClientID          uuid.UUID
@@ -84,9 +72,25 @@ type Loan struct {
 	UpdatedAt         time.Time
 }
 
+type OutboxMessage struct {
+	ID            uuid.UUID
+	AggregateType string
+	AggregateID   uuid.UUID
+	CommandType   string
+	Payload       json.RawMessage
+	Status        string
+	Attempts      int32
+	LockedAt      sql.NullTime
+	PublishedAt   sql.NullTime
+	LockedBy      sql.NullString
+	LastError     sql.NullString
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
 type Transaction struct {
 	ID        uuid.UUID
-	Reference string
+	Type      string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -100,4 +104,16 @@ type UnresolvedPayment struct {
 	Reason         string
 	CreatedAt      time.Time
 	RawEvent       json.RawMessage
+}
+
+type WithdrawalsPayable struct {
+	ID                 uuid.UUID
+	InvestmentID       uuid.UUID
+	Amount             int64
+	NoticePeriodMonths int32
+	RequestedAt        time.Time
+	EligibleAt         time.Time
+	Status             string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }

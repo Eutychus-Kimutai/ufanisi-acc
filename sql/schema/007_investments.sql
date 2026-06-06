@@ -30,4 +30,4 @@ CREATE TABLE IF NOT EXISTS investments (
 );
 
 -- +goose Down
-DROP TABLE IF EXISTS investments;
+DROP TABLE IF EXISTS investments CASCADE;

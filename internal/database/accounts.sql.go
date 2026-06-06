@@ -51,3 +51,25 @@ func (q *Queries) GetAccount(ctx context.Context, id uuid.UUID) (Account, error)
 	)
 	return i, err
 }
+
+const getCapitalAccount = `-- name: GetCapitalAccount :one
+SELECT id FROM accounts WHERE name = 'Capital Account' LIMIT 1
+`
+
+func (q *Queries) GetCapitalAccount(ctx context.Context) (uuid.UUID, error) {
+	row := q.db.QueryRowContext(ctx, getCapitalAccount)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const getInvestorFundsAccount = `-- name: GetInvestorFundsAccount :one
+SELECT id FROM accounts WHERE name = 'Investor Funds Account' LIMIT 1
+`
+
+func (q *Queries) GetInvestorFundsAccount(ctx context.Context) (uuid.UUID, error) {
+	row := q.db.QueryRowContext(ctx, getInvestorFundsAccount)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}

@@ -8,10 +8,14 @@ import (
 type CommandType string
 
 const (
-	PostTransaction    CommandType = "POST_TRANSACTION"
-	ApplyLoanRepayment CommandType = "APPLY_LOAN_REPAYMENT"
-	UnresolvedPayment  CommandType = "UNRESOLVED_PAYMENT"
-	InvestmentCreated  CommandType = "INVESTMENT_CREATED"
+	PostTransaction               CommandType = "POST_TRANSACTION"
+	ApplyLoanRepayment            CommandType = "APPLY_LOAN_REPAYMENT"
+	UnresolvedPayment             CommandType = "UNRESOLVED_PAYMENT"
+	InvestmentCreated             CommandType = "INVESTMENT_CREATED"
+	InvestmentAccrued             CommandType = "INVESTMENT_ACCRUED"
+	InvestmentWithdrawalRequested CommandType = "INVESTMENT_WITHDRAWAL_REQUESTED"
+	InvestmentWithdrawalProcessed CommandType = "INVESTMENT_WITHDRAWAL_PROCESSED"
+	InvestmentMatured             CommandType = "INVESTMENT_MATURED"
 )
 
 type Entry struct {
@@ -46,6 +50,30 @@ type InvestmentCreatedPayload struct {
 	NextAccrualDate string  `json:"next_accrual_date"`
 }
 
+type InvestmentAccruedPayload struct {
+	InvestmentId    string `json:"investment_id"`
+	AccrualAmount   int64  `json:"accrual_amount"`
+	NewAccruedTotal int64  `json:"new_accrued_total"`
+	NextAccrualDate string `json:"next_accrual_date"`
+}
+
+type InvestmentWithdrawalRequestedPayload struct {
+	InvestmentId string `json:"investment_id"`
+	WithdrawalId string `json:"withdrawal_id"`
+	Amount       int64  `json:"amount"`
+	Status       string `json:"status"`
+	RequestedAt  string `json:"requested_at"`
+	EligibleAt   string `json:"eligible_at"`
+}
+
+type AccrualNoticePayload struct {
+	InvestmentId  string `json:"investment_id"`
+	AccrualAmount int64  `json:"accrual_amount"`
+}
+
+type InvestmentMaturedPayload struct {
+	InvestmentId string `json:"investment_id"`
+}
 type Payload struct {
 	Reference string  `json:"reference"`
 	Entries   []Entry `json:"entries"`

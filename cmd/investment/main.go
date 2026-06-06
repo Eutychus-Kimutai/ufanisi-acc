@@ -8,9 +8,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	httphandler "github.com/Eutychus-Kimutai/ufanisi-acc/cmd/httpHandler"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/rabbitmq"
+	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/repository"
 )
 
 func main() {
@@ -54,11 +56,39 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create worker: %v", err)
 	}
-
 	// HTTPHandler
 	handler := httphandler.NewHandler(worker)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	dispacherCh, err := rabbitmq.NewChannel(conn)
+	if err != nil {
+		log.Fatalf("Failed to open channel for dispatcher: %v", err)
+	}
+	defer dispacherCh.Close()
+	dispatcher := &OutboxDispatcher{
+		repo:    repository.NewOutboxRepository(db),
+		channel: dispacherCh,
+		locker:  "investment-dispatcher",
+		cfg:     cfg,
+	}
+	log.Println("Starting outbox dispatcher...")
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				log.Println("Dispatcher stopping...")
+				return
+			case <-ticker.C:
+				err := dispatcher.DispatchOnce(ctx)
+				if err != nil {
+					log.Printf("Error dispatching messages: %v", err)
+				}
+			}
+		}
+	}()
 	go func() {
 		log.Println("Starting HTTP server on :8082")
 		if err := http.ListenAndServe(":8082", handler); err != nil {
@@ -70,5 +100,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to start consumer: %v", err)
 	}
+	// New channel for scheduler
+	schedulerCh, err := rabbitmq.NewChannel(conn)
+	if err != nil {
+		log.Fatalf("Failed to open channel for scheduler: %v", err)
+	}
+
+	log.Println("Starting interest accrual scheduler...")
+	accrualWorker := NewAccrualWorker(db, schedulerCh, cfg)
+	err = StartScheduler(ctx, worker, accrualWorker)
+	if err != nil {
+		log.Fatalf("Failed to start scheduler: %v", err)
+	}
+	defer schedulerCh.Close()
 	<-ctx.Done()
+
 }

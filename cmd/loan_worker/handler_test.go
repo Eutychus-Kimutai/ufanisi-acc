@@ -33,13 +33,21 @@ func TestWorker_HandlePaymentEvent(t *testing.T) {
 	mockCh := &testutils.MockChannel{}
 	worker, err := NewWorker(db, mockCh, "payments.loan", &rabbitmq.RabbitConfig{
 		Queues: struct {
-			Loan       string `yaml:"loan"`
-			Investment string `yaml:"investment"`
-			Unresolved string `yaml:"unresolved"`
+			Loan              string `yaml:"loan"`
+			Investment        string `yaml:"investment"`
+			Unresolved        string `yaml:"unresolved"`
+			AccrualNotice     string `yaml:"accrual_notice"`
+			InvestmentAccrued string `yaml:"investment_accrued"`
+			WithdrawalNotice  string `yaml:"withdrawal_notice"`
+			MaturityNotice    string `yaml:"maturity_notice"`
 		}{
-			Unresolved: "unresolved_payments",
-			Loan:       "loans",
-			Investment: "investments",
+			Unresolved:        "unresolved_payments",
+			Loan:              "loans",
+			Investment:        "investments",
+			AccrualNotice:     "accrual_notices",
+			InvestmentAccrued: "investment_accrued",
+			WithdrawalNotice:  "withdrawal_notices",
+			MaturityNotice:    "maturity_notices",
 		},
 	})
 	require.NoError(t, err)

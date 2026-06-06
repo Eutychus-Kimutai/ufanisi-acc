@@ -4,3 +4,11 @@ RETURNING *;
 
 -- name: GetAccount :one
 SELECT id, name, type, created_at, updated_at FROM accounts WHERE id = $1;
+
+
+-- name: GetCapitalAccount :one
+SELECT id FROM accounts WHERE name = 'Capital Account' LIMIT 1;
+
+-- name: GetInvestorFundsAccount :one
+SELECT id FROM accounts WHERE name = 'Investor Funds Account' LIMIT 1;
+

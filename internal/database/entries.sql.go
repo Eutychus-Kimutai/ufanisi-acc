@@ -7,13 +7,16 @@ package database
 
 import (
 	"context"
-	"time"
 
 	"github.com/google/uuid"
 )
 
 const createEntry = `-- name: CreateEntry :one
-INSERT INTO entries (id, account_id, transaction_id, amount, type, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO entries (
+    id, account_id, transaction_id, amount, type
+    ) VALUES (
+        $1, $2, $3, $4, $5
+        )
 RETURNING id, account_id, transaction_id, amount, type, created_at, updated_at
 `
 
@@ -23,8 +26,6 @@ type CreateEntryParams struct {
 	TransactionID uuid.UUID
 	Amount        int64
 	Type          string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
 }
 
 func (q *Queries) CreateEntry(ctx context.Context, arg CreateEntryParams) (Entry, error) {
@@ -34,8 +35,6 @@ func (q *Queries) CreateEntry(ctx context.Context, arg CreateEntryParams) (Entry
 		arg.TransactionID,
 		arg.Amount,
 		arg.Type,
-		arg.CreatedAt,
-		arg.UpdatedAt,
 	)
 	var i Entry
 	err := row.Scan(

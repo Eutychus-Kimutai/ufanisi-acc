@@ -13,13 +13,13 @@ import (
 )
 
 const createTransaction = `-- name: CreateTransaction :one
-INSERT INTO transactions (id, reference, created_at, updated_at) VALUES ($1, $2, $3, $4)
-RETURNING id, reference, created_at, updated_at
+INSERT INTO transactions (id, type, created_at, updated_at) VALUES ($1, $2, $3, $4)
+RETURNING id, type, created_at, updated_at
 `
 
 type CreateTransactionParams struct {
 	ID        uuid.UUID
-	Reference string
+	Type      string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -27,14 +27,14 @@ type CreateTransactionParams struct {
 func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionParams) (Transaction, error) {
 	row := q.db.QueryRowContext(ctx, createTransaction,
 		arg.ID,
-		arg.Reference,
+		arg.Type,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
 	var i Transaction
 	err := row.Scan(
 		&i.ID,
-		&i.Reference,
+		&i.Type,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
