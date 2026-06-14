@@ -56,5 +56,14 @@ updated_at = NOW()
 WHERE status = 'processing'
 AND locked_at < NOW() - INTERVAL '5 minutes';
 
-
-
+-- name: PurgeOldMessages :execrows
+WITH deleted AS (
+    SELECT id FROM outbox_messages
+    WHERE status = 'failed' 
+    AND attempts >= 5
+    AND updated_at < NOW() - (sqlc.arg(days)::int * INTERVAL '1 day')
+    ORDER BY updated_at ASC
+    LIMIT $1)
+    DELETE FROM outbox_messages
+    USING deleted
+    WHERE outbox_messages.id = deleted.id;

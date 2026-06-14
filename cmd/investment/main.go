@@ -73,6 +73,34 @@ func main() {
 		cfg:     cfg,
 	}
 	log.Println("Starting outbox dispatcher...")
+	log.Println("Purging failed messages...")
+	purgeOnce := func(runCtx context.Context) {
+		deletedCount, err := dispatcher.repo.PurgeOldMessages(runCtx, 10, 100)
+		if err != nil {
+			log.Printf("Error purging old messages: %v", err)
+		} else {
+			log.Printf("Purged %d old failed messages", deletedCount)
+		}
+	}
+	go func() {
+		purgeOnce(ctx)
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				// Get fresh context to avoid using a canceled context
+				freshCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				purgeOnce(freshCtx)
+				cancel()
+				return
+			case <-ticker.C:
+				purgeOnce(ctx)
+
+			}
+		}
+
+	}()
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()

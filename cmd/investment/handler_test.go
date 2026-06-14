@@ -282,8 +282,11 @@ func TestHandlePaymentEvent(t *testing.T) {
 	inv, err := invRepo.GetInvestmentByID(context.Background(), invID)
 	require.NoError(t, err, "Expected to retrieve investment from database without error")
 	assert.Equal(t, int64(25), inv.AccruedInterest, "Expected AccruedInterest in database to be 25 after accrual processing")
-	assert.WithinDuration(t, time.Now(), inv.LastAccrualAt.Time, 2*time.Second, "Expected LastAccrualAt to be updated to now")
-	assert.WithinDuration(t, time.Now().AddDate(0, 1, 0), inv.NextAccrualAt, 2*time.Second, "Expected NextAccrualAt to be updated to one month from now")
+	seededLastAccrual := investmentForAccrual.LastAccrualAt.Time
+	expectedLastAccrual := seededLastAccrual.AddDate(0, 1, 0)
+	assert.WithinDuration(t, expectedLastAccrual, inv.LastAccrualAt.Time, 2*time.Second, "Expected LastAccrualAt to be updated correctly")
+	expectedNextAccrual := expectedLastAccrual.AddDate(0, 1, 0)
+	assert.WithinDuration(t, expectedNextAccrual, inv.NextAccrualAt, 2*time.Second, "Expected NextAccrualAt to be updated to one month from now")
 
 	var (
 		outboxCount         int
@@ -325,5 +328,59 @@ func TestHandlePaymentEvent(t *testing.T) {
 		assert.Equal(t, int64(25), payload.NewAccruedTotal, "Expected NewAccruedTotal in published message to match the accrual")
 		assert.NotEmpty(t, payload.NextAccrualDate, "Expected NextAccrualDate in published message to be set")
 	}
+
+	// Test purge old messages
+	_, err = db.ExecContext(context.Background(), `INSERT INTO outbox_messages (
+  	aggregate_type, aggregate_id, command_type, payload, status, attempts, updated_at, created_at
+	) VALUES ('investment','00000000-0000-0000-0000-000000000001','INVESTMENT_ACCRUED','{}','failed',5,NOW()-INTERVAL '20 days',NOW()-INTERVAL '20 days'),
+	('investment','00000000-0000-0000-0000-000000000002','INVESTMENT_ACCRUED','{}','failed',5,NOW()-INTERVAL '15 days',NOW()-INTERVAL '15 days');`,
+	)
+	require.NoError(t, err, "Expected to insert old failed outbox messages without error")
+
+	_, err = db.ExecContext(context.Background(), `INSERT INTO outbox_messages (
+  	aggregate_type, aggregate_id, command_type, payload, status, attempts, updated_at, created_at
+	) VALUES
+	('investment','00000000-0000-0000-0000-000000000003','INVESTMENT_ACCRUED','{}','failed',4,NOW()-INTERVAL '20 days',NOW()-INTERVAL '20 days'),
+	('investment','00000000-0000-0000-0000-000000000004','INVESTMENT_ACCRUED','{}','failed',5,NOW()-INTERVAL '2 days',NOW()-INTERVAL '2 days');`,
+	)
+	require.NoError(t, err, "Expected to insert additional old failed outbox messages without error")
+
+	outboxRepo := repository.NewOutboxRepository(db)
+	count, err := outboxRepo.PurgeOldMessages(context.Background(), 10, 100)
+	require.NoError(t, err, "Expected to purge old messages without error")
+	require.Equal(t, int64(2), count, "Expected to delete 2 old failed messages")
+
+	rows, err := db.QueryContext(context.Background(), `
+	SELECT status, attempts, COUNT(*)
+	FROM outbox_messages
+	WHERE status = 'failed'
+	GROUP BY status, attempts
+	ORDER BY attempts
+	`)
+	require.NoError(t, err, "Expected to query remaining failed messages without error")
+	defer rows.Close()
+
+	remaining := make(map[int]int)
+	for rows.Next() {
+		var status string
+		var attempts int
+		var count int
+		err := rows.Scan(&status, &attempts, &count)
+		require.NoError(t, err, "Expected to scan row without error")
+		remaining[attempts] = count
+	}
+	require.NoError(t, rows.Err(), "Expected no error during row iteration")
+
+	require.Equal(t, 1, remaining[4], "Expected 1 remaining failed message with 4 attempts")
+	require.Equal(t, 1, remaining[5], "Expected 1 remaining failed message with 5 attempts")
+
+	var oldTerminalRemaining int
+	err = db.QueryRowContext(context.Background(), `
+	SELECT COUNT(*)
+	FROM outbox_messages
+	WHERE status = 'failed' AND attempts >= 5 AND updated_at < NOW() - INTERVAL '10 days'
+	`).Scan(&oldTerminalRemaining)
+	require.NoError(t, err, "Expected to query remaining old terminal failed messages without error")
+	require.Equal(t, 0, oldTerminalRemaining, "Expected no remaining old terminal failed messages after purge")
 
 }

@@ -155,6 +155,32 @@ func (q *Queries) MarkMessageAsPublished(ctx context.Context, id uuid.UUID) erro
 	return err
 }
 
+const purgeOldMessages = `-- name: PurgeOldMessages :execrows
+WITH deleted AS (
+    SELECT id FROM outbox_messages
+    WHERE status = 'failed' 
+    AND attempts >= 5
+    AND updated_at < NOW() - ($2::int * INTERVAL '1 day')
+    ORDER BY updated_at ASC
+    LIMIT $1)
+    DELETE FROM outbox_messages
+    USING deleted
+    WHERE outbox_messages.id = deleted.id
+`
+
+type PurgeOldMessagesParams struct {
+	Limit int32
+	Days  int32
+}
+
+func (q *Queries) PurgeOldMessages(ctx context.Context, arg PurgeOldMessagesParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, purgeOldMessages, arg.Limit, arg.Days)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const releaseStaleLocks = `-- name: ReleaseStaleLocks :exec
 UPDATE outbox_messages
 SET status = 'failed',

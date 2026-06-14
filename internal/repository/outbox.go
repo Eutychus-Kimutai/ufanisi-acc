@@ -72,3 +72,14 @@ func (r *OutboxRepository) ReleaseStaleLocks(ctx context.Context) error {
 	}
 	return nil
 }
+
+func (r *OutboxRepository) PurgeOldMessages(ctx context.Context, days, limit int) (int64, error) {
+	deletedMessages, err := r.db.PurgeOldMessages(ctx, database.PurgeOldMessagesParams{
+		Days:  int32(days),
+		Limit: int32(limit),
+	})
+	if err != nil {
+		return 0, err
+	}
+	return deletedMessages, nil
+}

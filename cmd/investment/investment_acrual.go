@@ -47,7 +47,7 @@ func (w *AccrualWorker) ProcessInvestmentAccrual(ctx context.Context, inv *datab
 	// Calculate days since last accrual
 	now := time.Now()
 	monthsElapsed := 0
-	previousAccrual := inv.LastAccrualAt.Time
+	previousAccrual := time.Time{}
 	if inv.LastAccrualAt.Valid {
 		previousAccrual = inv.LastAccrualAt.Time
 	} else {
