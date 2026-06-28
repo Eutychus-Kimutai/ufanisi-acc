@@ -98,7 +98,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 
 		`CREATE INDEX IF NOT EXISTS idx_investment_accruals_investments ON investment_accruals(investment_id);`,
 
-		`CREATE TABLE IF NOT EXISTS investment_withdrawals (
+		`CREATE TABLE IF NOT EXISTS withdrawala_payable (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             investment_id UUID NOT NULL REFERENCES investments(id) ON DELETE CASCADE,
             amount BIGINT NOT NULL CHECK (amount >= 0),
@@ -110,7 +110,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );`,
 
-		`CREATE INDEX IF NOT EXISTS idx_investment_withdrawals_investments ON investment_withdrawals(investment_id);`,
+		`CREATE INDEX IF NOT EXISTS idx__withdrawals_payable ON withdrawals_payable(investment_id);`,
 
 		`INSERT INTO accounts (id, name, type)
         SELECT gen_random_uuid(), 'Capital Account', 'liability'

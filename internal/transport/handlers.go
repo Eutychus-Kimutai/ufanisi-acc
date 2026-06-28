@@ -314,8 +314,7 @@ func (h *Handler) handleRequestWithdrawal(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Withdrawal amount exceeds current principal", http.StatusBadRequest)
 		return
 	}
-
-	tx, err := h.db.BeginTx(context.Background(), nil)
+	tx, err := h.db.BeginTx(r.Context(), nil)
 	if err != nil {
 		log.Printf("Failed to begin transaction: %v\n", err)
 		http.Error(w, "Failed to process withdrawal request", http.StatusInternalServerError)
@@ -323,7 +322,7 @@ func (h *Handler) handleRequestWithdrawal(w http.ResponseWriter, r *http.Request
 	}
 	defer tx.Rollback()
 
-	// Generate withdrawal request command
+	// Generate withdrawal request command with tx
 	withdrawal, err := h.investment.CreateInvestmentWithdrawal(context.Background(), database.WithdrawalsPayable{
 		InvestmentID:       req.InvestmentID,
 		Amount:             req.Amount,

@@ -13,87 +13,108 @@ import (
 )
 
 func TestWorker_HandlePaymentEvent(t *testing.T) {
-	db, err := testutils.SetupTestDB()
-	require.NoError(t, err)
-	defer db.Close()
+	t.Parallel()
+	setup := func(t *testing.T) (*testutils.MockChannel, *LoanWorker, payment.PaymentEvent, func()) {
+		mockCh := &testutils.MockChannel{}
+		db, err := testutils.SetupTestDB()
+		require.NoError(t, err)
 
-	clientID := uuid.New()
-	_, err = db.ExecContext(context.Background(), `INSERT INTO clients (id, name, client_type) VALUES ($1, 'Test Client', 'loan')`, clientID)
-	require.NoError(t, err)
+		worker, err := NewWorker(db, mockCh, "payments.loan", &rabbitmq.RabbitConfig{
+			Queues: struct {
+				Loan                string `yaml:"loan"`
+				Investment          string `yaml:"investment"`
+				Unresolved          string `yaml:"unresolved"`
+				AccrualNotice       string `yaml:"accrual_notice"`
+				InvestmentAccrued   string `yaml:"investment_accrued"`
+				WithdrawalRequested string `yaml:"withdrawal.requested"`
+				WithdrawalProcessed string `yaml:"withdrawal.processed"`
+				MaturityNotice      string `yaml:"maturity_notice"`
+			}{
+				Unresolved:          "unresolved_payments",
+				Loan:                "loans",
+				Investment:          "investments",
+				AccrualNotice:       "accrual_notices",
+				InvestmentAccrued:   "investment_accrued",
+				WithdrawalRequested: "withdrawal_requested",
+				WithdrawalProcessed: "withdrawal_processed",
+				MaturityNotice:      "maturity_notices",
+			},
+		})
+		require.NoError(t, err)
 
-	loanID := uuid.New()
-	_, err = db.ExecContext(context.Background(),
-		`INSERT INTO loans (id, client_id, loan_number, product_type, status, principal_amount, outstanding_amount) VALUES ($1, $2, 'LN123', 'Personal', 'active', 10000, 10000)`,
-		loanID, clientID)
-	require.NoError(t, err)
+		clientID := uuid.New()
+		_, err = db.ExecContext(context.Background(), `INSERT INTO clients (id, name, client_type) VALUES ($1, 'Test Client', 'loan')`, clientID)
+		require.NoError(t, err)
 
-	defer db.Exec("DELETE FROM loans WHERE id = $1", loanID)
-	defer db.Exec("DELETE FROM clients WHERE id = $1", clientID)
+		loanID := uuid.New()
+		_, err = db.ExecContext(context.Background(),
+			`INSERT INTO loans (id, client_id, loan_number, product_type, status, principal_amount, outstanding_amount) VALUES ($1, $2, 'LN123', 'Personal', 'active', 10000, 10000)`,
+			loanID, clientID)
+		require.NoError(t, err)
 
-	mockCh := &testutils.MockChannel{}
-	worker, err := NewWorker(db, mockCh, "payments.loan", &rabbitmq.RabbitConfig{
-		Queues: struct {
-			Loan              string `yaml:"loan"`
-			Investment        string `yaml:"investment"`
-			Unresolved        string `yaml:"unresolved"`
-			AccrualNotice     string `yaml:"accrual_notice"`
-			InvestmentAccrued string `yaml:"investment_accrued"`
-			WithdrawalNotice  string `yaml:"withdrawal_notice"`
-			MaturityNotice    string `yaml:"maturity_notice"`
-		}{
-			Unresolved:        "unresolved_payments",
-			Loan:              "loans",
-			Investment:        "investments",
-			AccrualNotice:     "accrual_notices",
-			InvestmentAccrued: "investment_accrued",
-			WithdrawalNotice:  "withdrawal_notices",
-			MaturityNotice:    "maturity_notices",
-		},
-	})
-	require.NoError(t, err)
+		defer db.Exec("DELETE FROM loans WHERE id = $1", loanID)
+		defer db.Exec("DELETE FROM clients WHERE id = $1", clientID)
 
-	event := payment.PaymentEvent{
-		Amount:           5000,
-		ExternalId:       "EXT123",
-		Destination:      payment.DestinationAccount("loan"),
-		PaymentChannel:   payment.PaymentChannel("mobile_money"),
-		ClientRef:        clientID.String(),
-		AccountReference: "LN123Mali",
+		event := payment.PaymentEvent{
+			Amount:           5000,
+			ExternalId:       "EXT123",
+			Destination:      payment.DestinationAccount("loan"),
+			PaymentChannel:   payment.PaymentChannel("mobile_money"),
+			ClientRef:        clientID.String(),
+			AccountReference: "LN123Mali",
+		}
+		cleanup := func() {
+			db.Close()
+		}
+
+		return mockCh, worker, event, cleanup
 	}
-	err = worker.HandlePaymentEvent(context.Background(), event)
-	require.NoError(t, err)
+	t.Run("Test with invalid amount", func(t *testing.T) {
+		_, worker, event, cleanup := setup(t)
+		defer cleanup()
+		event.Amount = -100
+		err := worker.HandlePaymentEvent(context.Background(), event)
+		require.Error(t, err)
 
-	//  Test invalid amount
-	event.Amount = -100
-	err = worker.HandlePaymentEvent(context.Background(), event)
-	require.Error(t, err)
+	})
 
-	// Test missing ExternalId
-	event.Amount = 5000
-	event.ExternalId = ""
-	err = worker.HandlePaymentEvent(context.Background(), event)
-	require.Error(t, err)
+	t.Run("Test invalid destination account", func(t *testing.T) {
+		_, worker, event, cleanup := setup(t)
+		defer cleanup()
+		event.Destination = payment.DestinationAccount("savings")
+		err := worker.HandlePaymentEvent(context.Background(), event)
+		require.Error(t, err)
+	})
 
-	// Test invalid destination
-	event.ExternalId = "EXT123"
-	event.Destination = payment.DestinationAccount("savings")
-	err = worker.HandlePaymentEvent(context.Background(), event)
-	require.Error(t, err)
+	t.Run("test missing external ID", func(t *testing.T) {
+		_, worker, event, cleanup := setup(t)
+		defer cleanup()
+		event.ExternalId = ""
+		err := worker.HandlePaymentEvent(context.Background(), event)
+		require.Error(t, err)
+	})
 
-	// Test non-existent loan
-	event.Destination = payment.DestinationAccount("loan")
-	event.AccountReference = "LN999Mali"
-	err = worker.HandlePaymentEvent(context.Background(), event)
-	require.Error(t, err)
+	t.Run("Test non-existent loan", func(t *testing.T) {
+		_, worker, event, cleanup := setup(t)
+		defer cleanup()
+		event.AccountReference = "LN999Mali"
+		err := worker.HandlePaymentEvent(context.Background(), event)
+		require.Error(t, err)
+	})
 
-	// Test product type mismatch
-	event.AccountReference = "LN123Invalid"
-	err = worker.HandlePaymentEvent(context.Background(), event)
-	require.Error(t, err)
+	t.Run("Test product type mismatch", func(t *testing.T) {
+		_, worker, event, cleanup := setup(t)
+		defer cleanup()
+		event.AccountReference = "LN123Invalid"
+		err := worker.HandlePaymentEvent(context.Background(), event)
+		require.Error(t, err)
+	})
 
-	// Test non-existent client
-	event.AccountReference = "LN123Mali"
-	event.ClientRef = uuid.New().String()
-	err = worker.HandlePaymentEvent(context.Background(), event)
-	require.Error(t, err)
+	t.Run("Test non-existent client", func(t *testing.T) {
+		_, worker, event, cleanup := setup(t)
+		defer cleanup()
+		event.ClientRef = uuid.New().String()
+		err := worker.HandlePaymentEvent(context.Background(), event)
+		require.Error(t, err)
+	})
 }

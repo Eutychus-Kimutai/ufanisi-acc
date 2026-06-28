@@ -103,7 +103,7 @@ func (r *InvestmentRepository) CreateInvestmentWithdrawal(ctx context.Context, w
 	return &createdWithdrawal, nil
 }
 
-func (r *InvestmentRepository) ListEligibleWithdrawals(ctx context.Context, currentTime time.Time) ([]database.WithdrawalsPayable, error) {
+func (r *InvestmentRepository) ListEligibleWithdrawals(ctx context.Context) ([]database.WithdrawalsPayable, error) {
 	withdrawals, err := r.db.ListEligibleWithdrawals(ctx)
 	if err != nil {
 		return nil, err
@@ -131,6 +131,14 @@ func (r *InvestmentRepository) UpdateWithdrawalStatus(ctx context.Context, withd
 		Status: newStatus,
 		ID:     withdrawalID,
 	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *InvestmentRepository) UpdateWithdrawalStatusTx(ctx context.Context, tx *sql.Tx, withdrawalID uuid.UUID, newStatus string) error {
+	err := r.WithTx(tx).UpdateWithdrawalStatus(ctx, withdrawalID, newStatus)
 	if err != nil {
 		return err
 	}

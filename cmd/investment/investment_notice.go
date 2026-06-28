@@ -34,7 +34,26 @@ func (w *Worker) GenerateWithdrawalNotice(inv *database.Investment, amount int64
 	if err != nil {
 		return err
 	}
-	err = w.channel.Publish("", w.cfg.Queues.WithdrawalNotice, false, false, amqp.Publishing{
+	err = w.channel.Publish("", w.cfg.Queues.WithdrawalRequested, false, false, amqp.Publishing{
+		ContentType: "application/json",
+		Body:        command.Payload,
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (w *Worker) GenerateWithdrawalProcessedNotice(inv *database.Investment, amount int64) error {
+	noticePayload := commands.InvestmentWithdrawalProcessedPayload{
+		InvestmentId: inv.ID.String(),
+		Amount:       amount,
+	}
+	command, err := commands.NewCommand(commands.InvestmentWithdrawalProcessed, noticePayload)
+	if err != nil {
+		return err
+	}
+	err = w.channel.Publish("", w.cfg.Queues.WithdrawalProcessed, false, false, amqp.Publishing{
 		ContentType: "application/json",
 		Body:        command.Payload,
 	})
