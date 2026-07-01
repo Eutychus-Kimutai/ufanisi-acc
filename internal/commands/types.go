@@ -66,6 +66,11 @@ type InvestmentWithdrawalRequestedPayload struct {
 	EligibleAt   string `json:"eligible_at"`
 }
 
+type InvestmentWithdrawalProcessedPayload struct {
+	InvestmentId string `json:"investment_id"`
+	Amount       int64  `json:"amount"`
+}
+
 type AccrualNoticePayload struct {
 	InvestmentId  string `json:"investment_id"`
 	AccrualAmount int64  `json:"accrual_amount"`

@@ -7,6 +7,8 @@ import (
 )
 
 func Migrate(ctx context.Context, db *sql.DB) error {
+	const lockKey = int64(420694207)
+
 	statements := []string{
 		`CREATE EXTENSION IF NOT EXISTS pgcrypto;`,
 
@@ -33,7 +35,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
             type TEXT NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            FOREIGN KEY (account_id) REFERENCES accounts(id),
+	    FOREIGN KEY (account_id) REFERENCES accounts(id),
             FOREIGN KEY (transaction_id) REFERENCES transactions(id)
         );`,
 
@@ -98,7 +100,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 
 		`CREATE INDEX IF NOT EXISTS idx_investment_accruals_investments ON investment_accruals(investment_id);`,
 
-		`CREATE TABLE IF NOT EXISTS investment_withdrawals (
+		`CREATE TABLE IF NOT EXISTS withdrawals_payable (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             investment_id UUID NOT NULL REFERENCES investments(id) ON DELETE CASCADE,
             amount BIGINT NOT NULL CHECK (amount >= 0),
@@ -110,10 +112,11 @@ func Migrate(ctx context.Context, db *sql.DB) error {
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );`,
 
-		`CREATE INDEX IF NOT EXISTS idx_investment_withdrawals_investments ON investment_withdrawals(investment_id);`,
+		`CREATE INDEX IF NOT EXISTS idx__withdrawals_payable ON withdrawals_payable(investment_id);`,
 
 		`INSERT INTO accounts (id, name, type)
         SELECT gen_random_uuid(), 'Capital Account', 'liability'
+
         WHERE NOT EXISTS (
             SELECT 1 FROM accounts WHERE name = 'Capital Account'
         );`,
@@ -153,6 +156,13 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %v", err)
+	}
+	defer tx.Rollback()
+
+	// Acquire advisory lock to prevent concurrent migrations
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock($1)", lockKey); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to acquire advisory lock: %v", err)
 	}
 
 	for _, stmt := range statements {

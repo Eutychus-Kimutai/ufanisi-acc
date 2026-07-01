@@ -187,17 +187,29 @@ func (w *Worker) RequestWithdrawal(ctx context.Context, invID uuid.UUID, amount 
 }
 
 func (w *Worker) ProcessEligibleWithdrawals(ctx context.Context) error {
-	withdrawals, err := w.repo.ListEligibleWithdrawals(ctx, time.Now())
+	withdrawals, err := w.repo.ListEligibleWithdrawals(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list eligible withdrawals: %v", err)
 	}
 
 	for _, wdr := range withdrawals {
-		err := w.GenerateWithdrawalNotice(&database.Investment{ID: wdr.InvestmentID}, wdr.Amount)
+		tx, err := w.db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("failed to begin transaction for withdrawal ID %v: %v", wdr.ID, err)
+		}
+		defer tx.Rollback()
+		err = w.repo.UpdateWithdrawalStatusTx(ctx, tx, wdr.ID, "eligible")
+		if err != nil {
+			return fmt.Errorf("failed to update withdrawal status for withdrawal ID %v: %v", wdr.ID, err)
+		}
+
+		// generate withdrawal notice
+		err = w.GenerateWithdrawalNotice(&database.Investment{ID: wdr.InvestmentID}, wdr.Amount)
 		if err != nil {
 			fmt.Printf("Failed to generate withdrawal notice for withdrawal ID %v: %v\n", wdr.ID, err)
 			continue
 		}
+
 		// transfer funds (principal + accrued interest) to client account
 
 		err = w.ledger.Transfer(ctx, w.capitalAccID, wdr.InvestmentID, wdr.Amount)
@@ -210,7 +222,16 @@ func (w *Worker) ProcessEligibleWithdrawals(ctx context.Context) error {
 		if err != nil {
 			fmt.Printf("Failed to update withdrawal status for withdrawal ID %v: %v\n", wdr.ID, err)
 			continue
+
 		}
+
+		// generate withdrawal processed notice
+		err = w.GenerateWithdrawalProcessedNotice(&database.Investment{ID: wdr.InvestmentID}, wdr.Amount)
+		if err != nil {
+			fmt.Printf("Failed to generate withdrawal processed notice for withdrawal ID %v: %v\n", wdr.ID, err)
+			continue
+		}
+		tx.Commit()
 	}
 	return nil
 }

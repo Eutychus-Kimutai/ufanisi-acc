@@ -57,9 +57,70 @@ func (q *Queries) CreateInvestmentWithdrawal(ctx context.Context, arg CreateInve
 	return i, err
 }
 
+const getWithdrawalById = `-- name: GetWithdrawalById :one
+SELECT id, investment_id, amount, notice_period_months, requested_at, eligible_at, status, created_at, updated_at FROM withdrawals_payable
+WHERE id = $1
+`
+
+func (q *Queries) GetWithdrawalById(ctx context.Context, id uuid.UUID) (WithdrawalsPayable, error) {
+	row := q.db.QueryRowContext(ctx, getWithdrawalById, id)
+	var i WithdrawalsPayable
+	err := row.Scan(
+		&i.ID,
+		&i.InvestmentID,
+		&i.Amount,
+		&i.NoticePeriodMonths,
+		&i.RequestedAt,
+		&i.EligibleAt,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getWithdrawalsByInvestmentId = `-- name: GetWithdrawalsByInvestmentId :many
+SELECT id, investment_id, amount, notice_period_months, requested_at, eligible_at, status, created_at, updated_at FROM withdrawals_payable
+WHERE investment_id = $1
+ORDER BY requested_at DESC
+`
+
+func (q *Queries) GetWithdrawalsByInvestmentId(ctx context.Context, investmentID uuid.UUID) ([]WithdrawalsPayable, error) {
+	rows, err := q.db.QueryContext(ctx, getWithdrawalsByInvestmentId, investmentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []WithdrawalsPayable
+	for rows.Next() {
+		var i WithdrawalsPayable
+		if err := rows.Scan(
+			&i.ID,
+			&i.InvestmentID,
+			&i.Amount,
+			&i.NoticePeriodMonths,
+			&i.RequestedAt,
+			&i.EligibleAt,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listEligibleWithdrawals = `-- name: ListEligibleWithdrawals :many
 SELECT id, investment_id, amount, notice_period_months, requested_at, eligible_at, status, created_at, updated_at FROM withdrawals_payable
-WHERE eligible_at <= NOW()
+WHERE eligible_at >= requested_at + INTERVAL '1 month' * notice_period_months
 AND status = 'pending'
 ORDER BY eligible_at ASC
 `
