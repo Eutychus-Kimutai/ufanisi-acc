@@ -198,11 +198,9 @@ func (w *Worker) ProcessEligibleWithdrawals(ctx context.Context) error {
 			return fmt.Errorf("failed to begin transaction for withdrawal ID %v: %v", wdr.ID, err)
 		}
 		defer tx.Rollback()
-		if wdr.EligibleAt.After(time.Now()) {
-			err := w.repo.UpdateWithdrawalStatusTx(ctx, tx, wdr.ID, "eligible")
-			if err != nil {
-				return fmt.Errorf("failed to update withdrawal status for withdrawal ID %v: %v", wdr.ID, err)
-			}
+		err = w.repo.UpdateWithdrawalStatusTx(ctx, tx, wdr.ID, "eligible")
+		if err != nil {
+			return fmt.Errorf("failed to update withdrawal status for withdrawal ID %v: %v", wdr.ID, err)
 		}
 
 		// generate withdrawal notice

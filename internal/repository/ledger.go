@@ -25,16 +25,6 @@ func NewRepository(db *sql.DB) *LedgerRepository {
 		db: database.New(db),
 	}
 }
-func NewDB(connStr string) (*sql.DB, *LedgerRepository, error) {
-	openDb, err := sql.Open("postgres", connStr)
-	if err != nil {
-		return nil, nil, err
-	}
-	ledgerRepository := &LedgerRepository{
-		db: database.New(openDb),
-	}
-	return openDb, ledgerRepository, nil
-}
 
 func (l *LedgerRepository) CreateAccount(ctx context.Context, account database.Account) error {
 	_, err := l.db.CreateAccount(ctx, database.CreateAccountParams{
