@@ -27,10 +27,6 @@ func SetupTestDB() (*sql.DB, error) {
 		return nil, err
 	}
 
-	if _, err := db.Exec(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`); err != nil {
-		return nil, err
-	}
-
 	if err = migrations.Migrate(ctx, db); err != nil {
 		db.Close()
 		return nil, err
