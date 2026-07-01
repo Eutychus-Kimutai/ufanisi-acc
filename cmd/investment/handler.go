@@ -29,7 +29,6 @@ type Worker struct {
 	cfg                *rabbitmq.RabbitConfig
 	capitalAccID       uuid.UUID
 	investorFundsAccID uuid.UUID
-	outboxRepo         *repository.OutboxRepository
 }
 
 func NewWorker(db *sql.DB, channel Publisher, cfg *rabbitmq.RabbitConfig) (*Worker, error) {

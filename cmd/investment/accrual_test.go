@@ -17,7 +17,7 @@ import (
 func TestAccrual(t *testing.T) {
 	t.Parallel()
 	setup := func(t *testing.T) (*AccrualWorker, *database.Investment, *OutboxDispatcher, *testutils.MockChannel, func()) {
-		db, cleanup := SetupDBWithCleanup(t)
+		db, dbCleanup := SetupDBWithCleanup(t)
 		require.NotNil(t, db)
 
 		mockCh := &testutils.MockChannel{}
@@ -61,13 +61,14 @@ func TestAccrual(t *testing.T) {
 			investment.NextAccrualAt,
 		)
 		require.NoError(t, err)
-		require.NoError(t, err)
-		cleanup = func() {
-			_, err := db.Exec("DELETE FROM investments WHERE id = $1", investment.ID)
+		cleanup := func() {
+			defer dbCleanup()
+			ctx := context.Background()
+			_, err := db.ExecContext(ctx, "DELETE FROM investments WHERE id = $1", investment.ID)
 			require.NoError(t, err)
-			_, err = db.Exec("DELETE FROM clients WHERE id = $1", investment.ClientID)
+			_, err = db.ExecContext(ctx, "DELETE FROM clients WHERE id = $1", investment.ClientID)
 			require.NoError(t, err)
-			_, err = db.ExecContext(context.Background(), `DELETE FROM outbox_messages WHERE aggregate_id = $1`, investment.ID)
+			_, err = db.ExecContext(ctx, `DELETE FROM outbox_messages WHERE aggregate_id = $1`, investment.ID)
 			require.NoError(t, err)
 		}
 		return accrualWorker, investment, dispatcher, mockCh, cleanup
@@ -175,7 +176,6 @@ func TestAccrual(t *testing.T) {
 		rows, err := accrualWorker.db.QueryContext(context.Background(), `
 	SELECT status, attempts, COUNT(*)
 	FROM outbox_messages
-	WHERE status = 'failed'
 	GROUP BY status, attempts
 	ORDER BY attempts
 	`)

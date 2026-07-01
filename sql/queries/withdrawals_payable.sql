@@ -11,7 +11,8 @@ RETURNING *;
 
 -- name: ListEligibleWithdrawals :many
 SELECT * FROM withdrawals_payable
-WHERE eligible_at >= requested_at + INTERVAL '1 month' * notice_period_months
+WHERE eligible_at <= NOW() 
+AND eligible_at >= requested_at + INTERVAL '1 month' * notice_period_months
 AND status = 'pending'
 ORDER BY eligible_at ASC;
 

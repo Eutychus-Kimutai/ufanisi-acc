@@ -2,6 +2,8 @@ package loanworker
 
 import (
 	"context"
+	"database/sql"
+
 	"testing"
 
 	testutils "github.com/Eutychus-Kimutai/ufanisi-acc/cmd/test_utils"
@@ -12,12 +14,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func setupDBAndCleanup(t *testing.T) (*sql.DB, func()) {
+	db, err := testutils.SetupTestDB()
+	require.NoError(t, err)
+
+	cleanup := func() {
+		require.NoError(t, db.Close())
+	}
+	return db, cleanup
+}
 func TestWorker_HandlePaymentEvent(t *testing.T) {
 	t.Parallel()
 	setup := func(t *testing.T) (*testutils.MockChannel, *LoanWorker, payment.PaymentEvent, func()) {
 		mockCh := &testutils.MockChannel{}
-		db, err := testutils.SetupTestDB()
-		require.NoError(t, err)
+		db, dbCleanup := setupDBAndCleanup(t)
 
 		worker, err := NewWorker(db, mockCh, "payments.loan", &rabbitmq.RabbitConfig{
 			Queues: struct {
@@ -52,9 +62,6 @@ func TestWorker_HandlePaymentEvent(t *testing.T) {
 			loanID, clientID)
 		require.NoError(t, err)
 
-		defer db.Exec("DELETE FROM loans WHERE id = $1", loanID)
-		defer db.Exec("DELETE FROM clients WHERE id = $1", clientID)
-
 		event := payment.PaymentEvent{
 			Amount:           5000,
 			ExternalId:       "EXT123",
@@ -64,14 +71,19 @@ func TestWorker_HandlePaymentEvent(t *testing.T) {
 			AccountReference: "LN123Mali",
 		}
 		cleanup := func() {
-			db.Close()
+			defer dbCleanup()
+			_, err = db.Exec("DELETE FROM loans WHERE id = $1", loanID)
+			require.NoError(t, err)
+			_, err = db.Exec("DELETE FROM clients WHERE id = $1", clientID)
+			require.NoError(t, err)
+
 		}
 
 		return mockCh, worker, event, cleanup
 	}
 	t.Run("Test with invalid amount", func(t *testing.T) {
 		_, worker, event, cleanup := setup(t)
-		defer cleanup()
+		t.Cleanup(cleanup)
 		event.Amount = -100
 		err := worker.HandlePaymentEvent(context.Background(), event)
 		require.Error(t, err)
@@ -80,7 +92,7 @@ func TestWorker_HandlePaymentEvent(t *testing.T) {
 
 	t.Run("Test invalid destination account", func(t *testing.T) {
 		_, worker, event, cleanup := setup(t)
-		defer cleanup()
+		t.Cleanup(cleanup)
 		event.Destination = payment.DestinationAccount("savings")
 		err := worker.HandlePaymentEvent(context.Background(), event)
 		require.Error(t, err)
@@ -88,7 +100,7 @@ func TestWorker_HandlePaymentEvent(t *testing.T) {
 
 	t.Run("test missing external ID", func(t *testing.T) {
 		_, worker, event, cleanup := setup(t)
-		defer cleanup()
+		t.Cleanup(cleanup)
 		event.ExternalId = ""
 		err := worker.HandlePaymentEvent(context.Background(), event)
 		require.Error(t, err)
@@ -96,7 +108,7 @@ func TestWorker_HandlePaymentEvent(t *testing.T) {
 
 	t.Run("Test non-existent loan", func(t *testing.T) {
 		_, worker, event, cleanup := setup(t)
-		defer cleanup()
+		t.Cleanup(cleanup)
 		event.AccountReference = "LN999Mali"
 		err := worker.HandlePaymentEvent(context.Background(), event)
 		require.Error(t, err)
@@ -104,7 +116,7 @@ func TestWorker_HandlePaymentEvent(t *testing.T) {
 
 	t.Run("Test product type mismatch", func(t *testing.T) {
 		_, worker, event, cleanup := setup(t)
-		defer cleanup()
+		t.Cleanup(cleanup)
 		event.AccountReference = "LN123Invalid"
 		err := worker.HandlePaymentEvent(context.Background(), event)
 		require.Error(t, err)
@@ -112,7 +124,7 @@ func TestWorker_HandlePaymentEvent(t *testing.T) {
 
 	t.Run("Test non-existent client", func(t *testing.T) {
 		_, worker, event, cleanup := setup(t)
-		defer cleanup()
+		t.Cleanup(cleanup)
 		event.ClientRef = uuid.New().String()
 		err := worker.HandlePaymentEvent(context.Background(), event)
 		require.Error(t, err)
