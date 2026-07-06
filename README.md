@@ -137,7 +137,7 @@ rabbitmq:
     loan: "ledger.loan"
     investment: "ledger.investment"
   retry:
-    max_attempts: 5
+    max_retries: 5
     delay_seconds: 10
 ```
 
