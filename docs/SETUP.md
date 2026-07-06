@@ -67,10 +67,6 @@ Terminal 3:
 go run cmd/investment/main.go
 ```
 
-Loan worker note:
-
-- `cmd/loan_worker/main.go` currently declares `package loanworker`, so `go run cmd/loan_worker/main.go` is not executable until that package is changed to `main`.
-
 ## Health Checks
 
 - Ledger API: call a known endpoint such as GET /accounts/{id}
@@ -84,3 +80,7 @@ Loan worker note:
 - Ledger API responds on port 8080
 - Worker health endpoints respond on ports 8081 and 8082
 - Retry config key is aligned with internal/rabbitmq/config.go
+
+## Known Limitations
+
+- `cmd/loan_worker/main.go` currently declares `package loanworker`, so `go run cmd/loan_worker/main.go` is not executable until that package is changed to `package main`.

@@ -16,8 +16,6 @@
 | Investment Worker | cmd/investment/main.go      | RabbitMQ + HTTP | Processes investment messages, schedules accruals, dispatches outbox |
 | Loan Worker       | cmd/loan_worker/main.go     | RabbitMQ + HTTP | Processes loan payment events and unresolved routing                 |
 
-Important: `cmd/loan_worker/main.go` currently declares `package loanworker`, so it is not directly runnable with `go run` until changed to `package main`.
-
 ## Ports
 
 | Port | Service                | Endpoint Scope             |
@@ -28,36 +26,40 @@ Important: `cmd/loan_worker/main.go` currently declares `package loanworker`, so
 
 ## Message Topology
 
-| Queue Key         | Current Value in config.yaml | Used By                      |
-| ----------------- | ---------------------------- | ---------------------------- |
-| queues.loan       | ledger.loan                  | Ledger Consumer, Loan Worker |
-| queues.investment | ledger.investment            | Investment Worker            |
-| queues.unresolved | payment.unresolved           | Loan Worker                  |
+| Queue Key         | Current Value in config.yaml | Used By                                      |
+| ----------------- | ---------------------------- | -------------------------------------------- |
+| queues.loan       | ledger.loan                  | Ledger Consumer, Loan Worker (consumer path) |
+| queues.investment | ledger.investment            | Investment Worker                            |
+| queues.unresolved | payment.unresolved           | Loan Worker (publish + consume)              |
 
 The queue config struct also defines additional keys:
 
 - accrual_notice
 - investment_accrued
-- withdrawal.requested
-- withdrawal.processed
+- withdrawal_notice
 - maturity_notice
 
 If these keys are used at runtime, add them to config.yaml.
 
 ## Processing Flow
 
+Loan worker runtime path for `/payment` is: HTTP ingest -> `queues.unresolved` publish -> queue consume. There is no direct `/payment` publish to `queues.loan`.
+
 ```mermaid
 flowchart LR
     Pay[Payment Event] --> LoanHTTP[Loan Worker HTTP /payment]
     Pay --> InvHTTP[Investment Worker HTTP /payment]
 
-    LoanHTTP --> LoanQ[ledger.loan]
+    LoanHTTP --> UnresolvedQ[payment.unresolved]
     InvHTTP --> InvQ[ledger.investment]
+    Ext[External Queue Messages] --> LoanQ[ledger.loan]
 
     LoanQ --> LedgerConsumer[Ledger Consumer]
+    UnresolvedQ --> LoanWorker[Loan Worker]
     InvQ --> InvestmentWorker[Investment Worker]
 
     LedgerConsumer --> DB[(PostgreSQL Ledger)]
+    LoanWorker --> DB
     InvestmentWorker --> DB
 ```
 
@@ -68,3 +70,7 @@ flowchart LR
 - Service startup and ports: cmd/\*/main.go
 - Queue and retry config schema: internal/rabbitmq/config.go
 - Active runtime config values: config.yaml
+
+## Known Limitations
+
+- `cmd/loan_worker/main.go` currently declares `package loanworker`, so it is not directly runnable with `go run` until changed to `package main`.
