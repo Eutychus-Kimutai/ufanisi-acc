@@ -113,10 +113,10 @@ func (s *LedgerService) PostTransaction(ctx context.Context, transaction Transac
 // CreateEntry creates a single ledger entry (not associated with a transaction)
 func (s *LedgerService) CreateEntry(ctx context.Context, entry []database.CreateEntryParams) error {
 	tx, err := s.db.BeginTx(ctx, nil)
-	defer tx.Rollback()
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback()
 	// Verify account exists
 	for _, entry := range entry {
 		_, err := s.ledgerRepo.GetAccountByID(ctx, entry.AccountID)

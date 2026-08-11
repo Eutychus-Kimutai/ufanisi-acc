@@ -66,6 +66,10 @@ func StartConsumer(ctx context.Context, ch *amqp.Channel, queueName string, work
 				err = worker.HandlePaymentEvent(ctx, payload)
 				if err != nil {
 					log.Printf("Failed to handle payment event: %v", err)
+					if _, failErr := worker.paymentRepo.TryFailPayment(ctx, payload.ExternalId); failErr != nil {
+						log.Printf("Failed to mark payment as failed: %v", failErr)
+					}
+
 					msg.Nack(false, false)
 
 					continue
