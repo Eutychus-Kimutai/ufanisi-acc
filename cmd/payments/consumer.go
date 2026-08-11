@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"log"
 
-	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/payment"
+	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/commands"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-func StartConsumer(ctx context.Context, ch *amqp.Channel, queueName string, worker *Worker) error {
+func Consumer(ctx context.Context, ch *amqp.Channel, queueName string, handler *Handler) error {
 	msgs, err := ch.Consume(
 		queueName,
 		"",
@@ -34,24 +34,31 @@ func StartConsumer(ctx context.Context, ch *amqp.Channel, queueName string, work
 					log.Println("Message channel closed, shutting down consumer...")
 					return
 				}
-				var event payment.PaymentEvent
+				var event commands.Command
 				err := json.Unmarshal(msg.Body, &event)
 				if err != nil {
 					log.Printf("Failed to unmarshal message: %v", err)
 					msg.Nack(false, false)
 					continue
 				}
-
-				err = worker.HandlePaymentEvent(ctx, event)
+				var payload commands.PaymentResolvedPayload
+				err = json.Unmarshal(event.Payload, &payload)
 				if err != nil {
-					log.Printf("Failed to handle payment event: %v", err)
+					log.Printf("Failed to unmarshal payload: %v", err)
 					msg.Nack(false, false)
-
 					continue
 				}
+				log.Printf("Received payment event: %+v", payload)
+				_, err = handler.paymentRepo.TryCompletePayment(ctx, payload.IdempotencyKey)
+				if err != nil {
+					log.Printf("Failed to update payment status: %v", err)
+					msg.Nack(false, true)
+					continue
+				}
+				log.Printf("Payment updated to completed for external ID: %s", payload.IdempotencyKey)
 
-				msg.Ack(false)
 			}
+
 		}
 	}()
 	return nil

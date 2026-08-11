@@ -2,11 +2,12 @@
 CREATE TABLE IF NOT EXISTS investments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
+    reference TEXT NOT NULL UNIQUE,
     client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+
 
     principal_initial BIGINT NOT NULL CHECK (principal_initial >= 0),
     principal_current BIGINT NOT NULL CHECK (principal_current >= 0),
-    CHECK (principal_current <= principal_initial),
 
     monthly_rate DECIMAL(5, 4) NOT NULL 
         CHECK (monthly_rate >= 0 AND monthly_rate <= 5),

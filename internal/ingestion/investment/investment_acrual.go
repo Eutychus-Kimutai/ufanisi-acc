@@ -1,4 +1,4 @@
-package main
+package investment
 
 import (
 	"context"
@@ -80,14 +80,11 @@ func (w *AccrualWorker) ProcessInvestmentAccrual(ctx context.Context, inv *datab
 	}
 	defer tx.Rollback()
 	err = w.repo.UpdateInvestmentTx(ctx, tx, database.Investment{
-		AccruedInterest:  newAccruedTotal,
-		LastAccrualAt:    sql.NullTime{Time: lastProcessed, Valid: true},
-		ID:               inv.ID,
-		ClientID:         inv.ClientID,
-		NextAccrualAt:    nextAccrualDate,
-		UpdatedAt:        now,
-		Status:           inv.Status,
-		PrincipalCurrent: inv.PrincipalCurrent,
+		AccruedInterest: newAccruedTotal,
+		LastAccrualAt:   sql.NullTime{Time: lastProcessed, Valid: true},
+		ID:              inv.ID,
+		NextAccrualAt:   nextAccrualDate,
+		UpdatedAt:       now,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update investment: %w", err)

@@ -3,8 +3,9 @@ port: 5672
 username: "guest"
 password: "guest"
 queues:
-  loan: "ledger.loan"
-  investment: "ledger.investment"
+  loan: "payment.loan"
+  investment: "payment.investment"
+  resolved: "payment.resolved"
   unresolved: "payment.unresolved"
 retry:
   max_attempts: 5

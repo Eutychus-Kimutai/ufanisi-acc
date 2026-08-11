@@ -12,7 +12,7 @@ import (
 )
 
 const getLoanByID = `-- name: GetLoanByID :one
-SELECT id, client_id, loan_number, product_type, status, principal_amount, outstanding_amount, created_at, updated_at
+SELECT id, client_id, reference, loan_number, product_type, status, principal_amount, outstanding_amount, created_at, updated_at
 FROM loans WHERE id = $1
 `
 
@@ -22,6 +22,7 @@ func (q *Queries) GetLoanByID(ctx context.Context, id uuid.UUID) (Loan, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.ClientID,
+		&i.Reference,
 		&i.LoanNumber,
 		&i.ProductType,
 		&i.Status,
@@ -34,7 +35,7 @@ func (q *Queries) GetLoanByID(ctx context.Context, id uuid.UUID) (Loan, error) {
 }
 
 const getLoanByLoanNumber = `-- name: GetLoanByLoanNumber :one
-SELECT id, client_id, loan_number, product_type, status, principal_amount, outstanding_amount, created_at, updated_at
+SELECT id, client_id, reference, loan_number, product_type, status, principal_amount, outstanding_amount, created_at, updated_at
 FROM loans WHERE loan_number = $1
 `
 
@@ -44,6 +45,29 @@ func (q *Queries) GetLoanByLoanNumber(ctx context.Context, loanNumber string) (L
 	err := row.Scan(
 		&i.ID,
 		&i.ClientID,
+		&i.Reference,
+		&i.LoanNumber,
+		&i.ProductType,
+		&i.Status,
+		&i.PrincipalAmount,
+		&i.OutstandingAmount,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getLoanByReference = `-- name: GetLoanByReference :one
+SELECT id, client_id, reference, loan_number, product_type, status, principal_amount, outstanding_amount, created_at, updated_at FROM loans WHERE reference = $1
+`
+
+func (q *Queries) GetLoanByReference(ctx context.Context, reference string) (Loan, error) {
+	row := q.db.QueryRowContext(ctx, getLoanByReference, reference)
+	var i Loan
+	err := row.Scan(
+		&i.ID,
+		&i.ClientID,
+		&i.Reference,
 		&i.LoanNumber,
 		&i.ProductType,
 		&i.Status,
@@ -56,7 +80,7 @@ func (q *Queries) GetLoanByLoanNumber(ctx context.Context, loanNumber string) (L
 }
 
 const getLoansByClientID = `-- name: GetLoansByClientID :many
-SELECT id, client_id, loan_number, product_type, status, principal_amount, outstanding_amount, created_at, updated_at
+SELECT id, client_id, reference, loan_number, product_type, status, principal_amount, outstanding_amount, created_at, updated_at
 FROM loans WHERE client_id = $1 AND status = 'active'
 `
 
@@ -72,6 +96,7 @@ func (q *Queries) GetLoansByClientID(ctx context.Context, clientID uuid.UUID) ([
 		if err := rows.Scan(
 			&i.ID,
 			&i.ClientID,
+			&i.Reference,
 			&i.LoanNumber,
 			&i.ProductType,
 			&i.Status,
@@ -94,7 +119,7 @@ func (q *Queries) GetLoansByClientID(ctx context.Context, clientID uuid.UUID) ([
 }
 
 const updateLoanOutstandingAmount = `-- name: UpdateLoanOutstandingAmount :exec
-UPDATE loans SET outstanding_amount = $1, updated_at = NOW() WHERE id = $2
+UPDATE loans SET outstanding_amount = outstanding_amount - $1, updated_at = NOW() WHERE id = $2
 `
 
 type UpdateLoanOutstandingAmountParams struct {

@@ -1,4 +1,4 @@
-package main
+package investment
 
 import (
 	"context"
@@ -31,7 +31,6 @@ func (d *OutboxDispatcher) DispatchOnce(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to release stale locks: %v", err)
 	}
-	log.Println("Starting outbox dispatch cycle")
 	messages, err := d.repo.ClaimPendingMessages(ctx, d.locker)
 	if err != nil {
 		return fmt.Errorf("failed to claim pending messages: %v", err)

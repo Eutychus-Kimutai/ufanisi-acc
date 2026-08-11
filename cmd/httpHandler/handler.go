@@ -6,11 +6,11 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/payment"
+	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/commands"
 )
 
 type PaymentEventHandler interface {
-	HandlePaymentEvent(ctx context.Context, event payment.PaymentEvent) error
+	HandlePaymentEvent(ctx context.Context, event commands.ResolvePaymentPayload) error
 }
 
 type Handler struct {
@@ -34,7 +34,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handlePaymentEvent(w http.ResponseWriter, r *http.Request) {
-	var event payment.PaymentEvent
+	var event commands.ResolvePaymentPayload
 	err := json.NewDecoder(r.Body).Decode(&event)
 	if err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)

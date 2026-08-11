@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"log"
 	"os"
+
 	"time"
 
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/commands"
+	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/database"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/domain"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/rabbitmq"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/repository"
@@ -49,7 +51,8 @@ func main() {
 	defer db.Close()
 
 	repo := repository.NewRepository(db)
-	ledgerService := domain.NewLedgerService(db, repo)
+	clientRepo := repository.NewClientRepository(database.New(db))
+	ledgerService := domain.NewLedgerService(db, repo, clientRepo)
 
 	consumer := NewConsumer(ch, ledgerService, cfg.Retry.MaxRetries, time.Duration(cfg.Retry.DelaySeconds)*time.Second)
 
@@ -109,25 +112,29 @@ func (c *Consumer) processMessage(msg amqp.Delivery) error {
 	var cmd commands.Command
 	err := json.Unmarshal(msg.Body, &cmd)
 	if err != nil {
-		return fmt.Errorf("Failed to unmarshal message: %s", err)
+		return fmt.Errorf("failed to unmarshal message: %s", err)
 	}
 	var payload commands.Payload
 	err = json.Unmarshal(cmd.Payload, &payload)
 	if err != nil {
-		return fmt.Errorf("Failed to unmarshal command payload: %s", err)
+		return fmt.Errorf("failed to unmarshal command payload: %s", err)
 	}
 
 	entries := make([]domain.Entry, len(payload.Entries))
 	for i, e := range payload.Entries {
 		parsedId, err := uuid.Parse(e.AccountID)
 		if err != nil {
-			return fmt.Errorf("Failed to parse account ID: %s", err)
+			return fmt.Errorf("failed to parse account ID: %s", err)
 		}
-
+		parsedTxId, err := uuid.Parse(e.TransactionID)
+		if err != nil {
+			return fmt.Errorf("failed to parse transaction ID: %s", err)
+		}
 		entries[i] = domain.Entry{
-			AccountId: parsedId,
-			Amount:    e.Amount,
-			Type:      domain.EntryType(e.Type),
+			TransactionId: parsedTxId,
+			AccountId:     parsedId,
+			Amount:        e.Amount,
+			Type:          domain.EntryType(e.Type),
 		}
 	}
 	switch cmd.Type {
@@ -137,7 +144,7 @@ func (c *Consumer) processMessage(msg amqp.Delivery) error {
 			Entries: entries})
 	default:
 		log.Printf("Recieved unhandled command type: %s", cmd.Type)
-		return fmt.Errorf("Unknown command type: %s", cmd.Type)
+		return fmt.Errorf("unknown command type: %s", cmd.Type)
 	}
 }
 
@@ -163,10 +170,10 @@ func (c *Consumer) handleRetry(queueName string, msg amqp.Delivery, processErr e
 	dlqBody, err := json.Marshal(dlqEvent)
 	if err != nil {
 		log.Printf("Failed to marshal DLQ event: %s\n", err)
-		return fmt.Errorf("Failed to marshal DLQ event: %s", err)
+		return fmt.Errorf("failed to marshal DLQ event: %s", err)
 	}
 	err = c.channel.Publish(
-		"",               // exchange
+		"",               // exchanget
 		queueName+".dlq", // routing key
 		false,            // mandatory
 		false,            // immediate
@@ -177,7 +184,7 @@ func (c *Consumer) handleRetry(queueName string, msg amqp.Delivery, processErr e
 	)
 	if err != nil {
 		log.Printf("Failed to publish to DLQ: %s\n", err)
-		return fmt.Errorf("Failed to publish to DLQ: %s", err)
+		return fmt.Errorf("failed to publish to DLQ: %s", err)
 	}
 	return msg.Nack(false, false) // dont requeue, message is now in DLQ
 }

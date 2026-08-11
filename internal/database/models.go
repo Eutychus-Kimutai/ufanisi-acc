@@ -16,6 +16,7 @@ type Account struct {
 	ID        uuid.UUID
 	Name      string
 	Type      string
+	ClientID  uuid.NullUUID
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -40,6 +41,7 @@ type Entry struct {
 
 type Investment struct {
 	ID               uuid.UUID
+	Reference        string
 	ClientID         uuid.UUID
 	PrincipalInitial int64
 	PrincipalCurrent int64
@@ -63,6 +65,7 @@ type InvestmentAccrual struct {
 type Loan struct {
 	ID                uuid.UUID
 	ClientID          uuid.UUID
+	Reference         string
 	LoanNumber        string
 	ProductType       string
 	Status            string
@@ -86,6 +89,33 @@ type OutboxMessage struct {
 	LastError     sql.NullString
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+}
+
+type Payment struct {
+	ID                 uuid.UUID
+	IdempotencyKey     string
+	ExternalID         string
+	Amount             int64
+	PaymentType        string
+	PhoneNumber        string
+	ClientRef          string
+	PaymentRef         string
+	Destination        string
+	Status             string
+	ResolvedType       sql.NullString
+	ResolvingStartedAt sql.NullTime
+	RawEvent           json.RawMessage
+	CreatedAt          time.Time
+	ResolvedAt         sql.NullTime
+	UpdatedAt          time.Time
+}
+
+type PaymentReference struct {
+	ID         uuid.UUID
+	Reference  string
+	EntityType string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 type Transaction struct {

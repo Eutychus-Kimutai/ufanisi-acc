@@ -7,20 +7,25 @@ import (
 	"github.com/google/uuid"
 )
 
+type ClientRepository struct {
+	db *database.Queries
+}
 type Client struct {
 	ID         string
 	Name       string
 	ClientType string
 }
 
-func (r *LedgerRepository) GetClientByID(ctx context.Context, clientID uuid.UUID) (database.Client, error) {
+func NewClientRepository(db *database.Queries) *ClientRepository {
+	return &ClientRepository{
+		db: db,
+	}
+}
+
+func (r *ClientRepository) GetClientByID(ctx context.Context, clientID uuid.UUID) (database.Client, error) {
 	client, err := r.db.GetClientByID(ctx, clientID)
 	if err != nil {
 		return database.Client{}, err
 	}
-	return database.Client{
-		ID:         client.ID,
-		Name:       client.Name,
-		ClientType: client.ClientType,
-	}, nil
+	return client, nil
 }

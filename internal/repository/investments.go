@@ -24,6 +24,7 @@ func (r *InvestmentRepository) WithTx(tx *sql.Tx) *InvestmentRepository {
 func (r *InvestmentRepository) CreateInvestment(ctx context.Context, inv database.Investment) (*database.Investment, error) {
 	inv.NextAccrualAt = time.Now().AddDate(0, 1, 0)
 	createdInv, err := r.db.CreateInvestment(ctx, database.CreateInvestmentParams{
+		Reference:        inv.Reference,
 		ClientID:         inv.ClientID,
 		PrincipalInitial: inv.PrincipalInitial,
 		NextAccrualAt:    inv.NextAccrualAt,
@@ -32,6 +33,13 @@ func (r *InvestmentRepository) CreateInvestment(ctx context.Context, inv databas
 		return nil, err
 	}
 	return &createdInv, nil
+}
+func (r *InvestmentRepository) GetInvestmentByReference(ctx context.Context, reference string) (*database.Investment, error) {
+	inv, err := r.db.GetInvestmentByReference(ctx, reference)
+	if err != nil {
+		return nil, err
+	}
+	return &inv, nil
 }
 
 func (r *InvestmentRepository) GetInvestmentByID(ctx context.Context, id uuid.UUID) (*database.Investment, error) {
@@ -52,19 +60,25 @@ func (r *InvestmentRepository) GetCapitalAccount(ctx context.Context) (*uuid.UUI
 
 func (r *InvestmentRepository) UpdateInvestment(ctx context.Context, inv database.Investment) error {
 	err := r.db.UpdateInvestment(ctx, database.UpdateInvestmentParams{
-		ID:               inv.ID,
 		PrincipalCurrent: inv.PrincipalCurrent,
-		AccruedInterest:  inv.AccruedInterest,
 		Status:           inv.Status,
-		NextAccrualAt:    inv.NextAccrualAt,
-		LastAccrualAt:    inv.LastAccrualAt,
-		ClientID:         inv.ClientID,
 		UpdatedAt:        time.Now(),
+		ID:               inv.ID,
 	})
 	if err != nil {
 		return err
 	}
 	return nil
+}
+func (r *InvestmentRepository) UpdateInvestmentPrincipal(ctx context.Context, inv database.Investment) (*database.Investment, error) {
+	inv, err := r.db.UpdateInvestmentPrincipal(ctx, database.UpdateInvestmentPrincipalParams{
+		PrincipalCurrent: inv.PrincipalCurrent,
+		ID:               inv.ID,
+	})
+	if err != nil {
+		return &database.Investment{}, err
+	}
+	return &inv, nil
 }
 
 func (r *InvestmentRepository) ListDueForAccrual(ctx context.Context, currentTime time.Time) ([]database.Investment, error) {
@@ -113,15 +127,12 @@ func (r *InvestmentRepository) ListEligibleWithdrawals(ctx context.Context) ([]d
 
 // wrap the updateinvestment so partial updates can be done in a transaction
 func (r *InvestmentRepository) UpdateInvestmentTx(ctx context.Context, tx *sql.Tx, inv database.Investment) error {
-	return r.WithTx(tx).UpdateInvestment(ctx, database.Investment{
-		ID:               inv.ID,
-		ClientID:         inv.ClientID,
-		NextAccrualAt:    inv.NextAccrualAt,
-		LastAccrualAt:    inv.LastAccrualAt,
-		UpdatedAt:        time.Now(),
-		Status:           inv.Status,
-		PrincipalCurrent: inv.PrincipalCurrent,
-		AccruedInterest:  inv.AccruedInterest,
+	return r.WithTx(tx).db.UpdateInvestmentAccrual(ctx, database.UpdateInvestmentAccrualParams{
+		ID:              inv.ID,
+		NextAccrualAt:   inv.NextAccrualAt,
+		LastAccrualAt:   inv.LastAccrualAt,
+		UpdatedAt:       time.Now(),
+		AccruedInterest: inv.AccruedInterest,
 	})
 }
 

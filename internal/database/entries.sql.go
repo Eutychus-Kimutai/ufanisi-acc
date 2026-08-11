@@ -49,6 +49,17 @@ func (q *Queries) CreateEntry(ctx context.Context, arg CreateEntryParams) (Entry
 	return i, err
 }
 
+const getAccountBalance = `-- name: GetAccountBalance :one
+SELECT SUM(amount) AS balance FROM entries WHERE type = $1
+`
+
+func (q *Queries) GetAccountBalance(ctx context.Context, type_ string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getAccountBalance, type_)
+	var balance int64
+	err := row.Scan(&balance)
+	return balance, err
+}
+
 const getEntries = `-- name: GetEntries :many
 SELECT id, account_id, transaction_id, amount, type, created_at, updated_at FROM entries WHERE account_id = $1
 `

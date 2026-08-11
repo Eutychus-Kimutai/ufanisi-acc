@@ -11,11 +11,15 @@ import (
 	"time"
 
 	httphandler "github.com/Eutychus-Kimutai/ufanisi-acc/cmd/httpHandler"
+	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/database"
+	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/ingestion/investment"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/rabbitmq"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/repository"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	godotenv.Load()
 	// Load configuration
 	cfg, err := rabbitmq.LoadConfig("config.yaml")
 	if err != nil {
@@ -52,7 +56,7 @@ func main() {
 		log.Fatalf("Failed to declare queue: %v", err)
 	}
 
-	worker, err := NewWorker(db, ch, cfg)
+	worker, err := investment.NewWorker(db, ch, cfg, database.New(db))
 	if err != nil {
 		log.Fatalf("Failed to create worker: %v", err)
 	}
@@ -66,16 +70,12 @@ func main() {
 		log.Fatalf("Failed to open channel for dispatcher: %v", err)
 	}
 	defer dispacherCh.Close()
-	dispatcher := &OutboxDispatcher{
-		repo:    repository.NewOutboxRepository(db),
-		channel: dispacherCh,
-		locker:  "investment-dispatcher",
-		cfg:     cfg,
-	}
+	outboxRepo := repository.NewOutboxRepository(db)
+	dispatcher := investment.NewOutboxDispatcher(outboxRepo, dispacherCh, cfg)
 	log.Println("Starting outbox dispatcher...")
 	log.Println("Purging failed messages...")
 	purgeOnce := func(runCtx context.Context) {
-		deletedCount, err := dispatcher.repo.PurgeOldMessages(runCtx, 10, 100)
+		deletedCount, err := outboxRepo.PurgeOldMessages(runCtx, 10, 100)
 		if err != nil {
 			log.Printf("Error purging old messages: %v", err)
 		} else {
@@ -124,7 +124,7 @@ func main() {
 		}
 	}()
 	log.Println("Starting RabbitMQ consumer...")
-	err = StartConsumer(ctx, ch, cfg.Queues.Investment, worker)
+	err = investment.StartConsumer(ctx, ch, cfg.Queues.Investment, worker)
 	if err != nil {
 		log.Fatalf("Failed to start consumer: %v", err)
 	}
@@ -135,8 +135,8 @@ func main() {
 	}
 
 	log.Println("Starting interest accrual scheduler...")
-	accrualWorker := NewAccrualWorker(db, schedulerCh, cfg)
-	err = StartScheduler(ctx, worker, accrualWorker)
+	accrualWorker := investment.NewAccrualWorker(db, schedulerCh, cfg)
+	err = investment.StartScheduler(ctx, worker, accrualWorker)
 	if err != nil {
 		log.Fatalf("Failed to start scheduler: %v", err)
 	}

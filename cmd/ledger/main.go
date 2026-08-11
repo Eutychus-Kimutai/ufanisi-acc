@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/database"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/domain"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/rabbitmq"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/repository"
@@ -24,14 +25,16 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 	defer db.Close()
+	log.Println("Connected to database")
 
 	err = migrations.Migrate(context.Background(), db)
 	if err != nil {
 		log.Fatalf("Failed to run migrations: %v", err)
 	}
+	log.Println("Database migrations completed successfully")
 
 	repo := repository.NewRepository(db)
-	ledgerService := domain.NewLedgerService(db, repo)
+	ledgerService := domain.NewLedgerService(db, repo, repository.NewClientRepository(database.New(db)))
 	investmentRepo := repository.NewInvestmentRepository(db)
 
 	// Initialize RabbitMQ publisher
@@ -44,6 +47,7 @@ func main() {
 		log.Fatalf("Failed to connect to RabbitMQ: %v", err)
 	}
 	defer conn.Close()
+	log.Println("Connected to RabbitMQ")
 
 	ch, err := rabbitmq.NewChannel(conn)
 	if err != nil {
@@ -51,6 +55,7 @@ func main() {
 	}
 	defer ch.Close()
 
-	router := transport.NewRouter(db, ledgerService, investmentRepo, ch)
+	router := transport.NewRouter(db, ledgerService, investmentRepo, ch, cfg)
 	http.ListenAndServe(":8080", router)
+	log.Println("Server started on port 8080")
 }

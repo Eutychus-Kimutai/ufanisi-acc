@@ -9,6 +9,7 @@ type QueueConfig struct {
 	WithdrawalRequested string `yaml:"withdrawal.requested"`
 	WithdrawalProcessed string `yaml:"withdrawal.processed"`
 	MaturityNotice      string `yaml:"maturity_notice"`
+	Resolved            string `yaml:"resolved"`
 }
 
 type RabbitConfig struct {

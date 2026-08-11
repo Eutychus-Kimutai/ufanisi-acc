@@ -41,11 +41,9 @@ queues:
   investment: ledger.investment
   unresolved: payment.unresolved
 retry:
-  max_attempts: 5
+  max_retries: 5
   delay_seconds: 10
 ```
-
-Important: code expects retry.max_retries while config.yaml currently uses retry.max_attempts.
 
 ## Run Services Locally
 
@@ -64,13 +62,19 @@ go run cmd/ledger-consumer/main.go
 Terminal 3:
 
 ```bash
-go run cmd/investment/main.go
+go run cmd/ingestion/investment/main.go
+```
+
+Terminal 4:
+
+```bash
+go run cmd/ingestion/loan_worker/main.go
 ```
 
 ## Health Checks
 
 - Ledger API: call a known endpoint such as GET /accounts/{id}
-- Loan worker (after package fix): GET http://localhost:8081/health
+- Loan worker: GET http://localhost:8081/health
 - Investment worker: GET http://localhost:8082/health
 
 ## Verification Checklist
@@ -80,7 +84,3 @@ go run cmd/investment/main.go
 - Ledger API responds on port 8080
 - Worker health endpoints respond on ports 8081 and 8082
 - Retry config key is aligned with internal/rabbitmq/config.go
-
-## Known Limitations
-
-- `cmd/loan_worker/main.go` currently declares `package loanworker`, so `go run cmd/loan_worker/main.go` is not executable until that package is changed to `package main`.
