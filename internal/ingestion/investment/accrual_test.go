@@ -1,4 +1,4 @@
-package main
+package investment
 
 import (
 	"context"
@@ -15,16 +15,16 @@ import (
 )
 
 func TestAccrual(t *testing.T) {
-	t.Parallel()
 	setup := func(t *testing.T) (*AccrualWorker, *database.Investment, *OutboxDispatcher, *testutils.MockChannel, func()) {
 		db, dbCleanup := SetupDBWithCleanup(t)
 		require.NotNil(t, db)
 
 		mockCh := &testutils.MockChannel{}
 
-		_, dispatcher, accrualWorker := BuildWorkerAndDispatcher(t, db, mockCh)
+		_, dispatcher, accrualWorker := BuildWorkerAndDispatcher(t, db, mockCh, database.New(db))
 
 		accrualClientID := uuid.New()
+		t.Logf("Creating accrual client with ID: %s", accrualClientID)
 
 		// Create accrual client
 		_, err := db.ExecContext(context.Background(),
@@ -39,6 +39,7 @@ func TestAccrual(t *testing.T) {
 			PrincipalCurrent: 100000,
 			MonthlyRate:      "2.5",
 			Status:           "active",
+			Reference:        "INVEST-ACCRUAL-001",
 			AccruedInterest:  0,
 			LastAccrualAt:    sql.NullTime{Time: time.Now().AddDate(0, -1, 0), Valid: true},
 			NextAccrualAt:    time.Now().AddDate(0, 0, 1),
@@ -47,15 +48,16 @@ func TestAccrual(t *testing.T) {
 		_, err = db.ExecContext(
 			context.Background(),
 			`INSERT INTO investments (
-            id, client_id, principal_initial, principal_current, monthly_rate, status,
+            id, client_id, principal_initial, principal_current, monthly_rate, status, reference,
             accrued_interest, last_accrual_at, next_accrual_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, $10)`,
 			investment.ID,
 			investment.ClientID,
 			investment.PrincipalInitial,
 			investment.PrincipalCurrent,
 			investment.MonthlyRate,
 			investment.Status,
+			investment.Reference,
 			investment.AccruedInterest,
 			investment.LastAccrualAt,
 			investment.NextAccrualAt,
@@ -64,9 +66,10 @@ func TestAccrual(t *testing.T) {
 		cleanup := func() {
 			defer dbCleanup()
 			ctx := context.Background()
-			_, err := db.ExecContext(ctx, "DELETE FROM investments WHERE id = $1", investment.ID)
-			require.NoError(t, err)
 			_, err = db.ExecContext(ctx, "DELETE FROM clients WHERE id = $1", investment.ClientID)
+			require.NoError(t, err)
+
+			_, err := db.ExecContext(ctx, "DELETE FROM investments WHERE id = $1", investment.ID)
 			require.NoError(t, err)
 			_, err = db.ExecContext(ctx, `DELETE FROM outbox_messages WHERE aggregate_id = $1`, investment.ID)
 			require.NoError(t, err)
@@ -74,17 +77,47 @@ func TestAccrual(t *testing.T) {
 		return accrualWorker, investment, dispatcher, mockCh, cleanup
 	}
 	t.Run("Test with multiple months", func(t *testing.T) {
+		t.Parallel()
+		accrualWorker, investment, _, _, cleanup := setup(t)
+		// get investment account and client IDs
+		inv, err := accrualWorker.repo.GetInvestmentByReference(context.Background(), investment.Reference)
+		require.NoError(t, err, "Expected to retrieve investment from database without error")
+		t.Cleanup(cleanup)
+		err = accrualWorker.ProcessInvestmentAccrual(context.Background(), investment)
+		require.NoError(t, err, "Expected to process investment accrual without error")
+
+		// Verify the investment accrual has correct values
+		invRepo := repository.NewInvestmentRepository(accrualWorker.db)
+		inv, err = invRepo.GetInvestmentByID(context.Background(), investment.ID)
+		require.NoError(t, err, "Expected to retrieve investment from database without error")
+		expectedAccruedInterest := int64(2500)
+		require.Equal(t, expectedAccruedInterest, inv.AccruedInterest, "Expected AccruedInterest in database to be 2500 after accrual processing")
+		expectedNextAccrualAt := time.Now().AddDate(0, 1, 0)
+		assert.WithinDuration(t, expectedNextAccrualAt, inv.NextAccrualAt, 2*time.Second, "Expected NextAccrualAt in database to be one month from now")
+		expectedLastAccrualAt := investment.LastAccrualAt.Time.AddDate(0, 1, 0)
+		assert.WithinDuration(t, expectedLastAccrualAt, inv.LastAccrualAt.Time, 2*time.Second, "Expected LastAccrualAt in database to be one month from previous accrual")
+	})
+
+	t.Run("Test with some interest already accrued", func(t *testing.T) {
+		t.Parallel()
 		accrualWorker, investment, _, _, cleanup := setup(t)
 		t.Cleanup(cleanup)
-		err := accrualWorker.ProcessInvestmentAccrual(context.Background(), investment)
+		db := accrualWorker.db
+		investment.AccruedInterest = 5000
+		_, err := db.ExecContext(context.Background(),
+			`UPDATE investments SET accrued_interest = $1 WHERE id = $2`,
+			investment.AccruedInterest, investment.ID)
+		require.NoError(t, err, "Expected to update accrued interest in database without error")
+
+		err = accrualWorker.ProcessInvestmentAccrual(context.Background(), investment)
 		require.NoError(t, err, "Expected to process investment accrual without error")
 
 		// Verify the investment accrual has correct values
 		invRepo := repository.NewInvestmentRepository(accrualWorker.db)
 		inv, err := invRepo.GetInvestmentByID(context.Background(), investment.ID)
 		require.NoError(t, err, "Expected to retrieve investment from database without error")
-		expectedAccruedInterest := int64(2500)
-		require.Equal(t, expectedAccruedInterest, inv.AccruedInterest, "Expected AccruedInterest in database to be 2500 after accrual processing")
+		expectedAccruedInterest := int64(7500)
+		require.Equal(t, expectedAccruedInterest, inv.AccruedInterest, "Expected AccruedInterest in database to be 7500 after accrual processing")
 		expectedNextAccrualAt := time.Now().AddDate(0, 1, 0)
 		assert.WithinDuration(t, expectedNextAccrualAt, inv.NextAccrualAt, 2*time.Second, "Expected NextAccrualAt in database to be one month from now")
 		expectedLastAccrualAt := investment.LastAccrualAt.Time.AddDate(0, 1, 0)

@@ -16,7 +16,7 @@ type Account struct {
 type Transaction struct {
 	Id        uuid.UUID
 	CreatedAt time.Time
-	Type     string
+	Type      string
 	Entries   []Entry
 }
 
@@ -40,6 +40,6 @@ const (
 type EntryType string
 
 const (
-	Debit  EntryType = "Debit"
-	Credit EntryType = "Credit"
+	Debit  EntryType = "debit"
+	Credit EntryType = "credit"
 )

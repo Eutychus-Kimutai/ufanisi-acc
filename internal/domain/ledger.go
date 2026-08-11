@@ -19,16 +19,18 @@ var (
 )
 
 type LedgerService struct {
-	db   *sql.DB
-	repo *repository.LedgerRepository
+	db          *sql.DB
+	ledgerRepo  *repository.LedgerRepository
+	clientRepo  *repository.ClientRepository
+	accountRepo *repository.AccountsRepository
 }
 
-func NewLedgerService(db *sql.DB, repo *repository.LedgerRepository) *LedgerService {
-	return &LedgerService{db: db, repo: repo}
+func NewLedgerService(db *sql.DB, ledgerRepo *repository.LedgerRepository, clientRepo *repository.ClientRepository) *LedgerService {
+	return &LedgerService{db: db, ledgerRepo: ledgerRepo, clientRepo: clientRepo, accountRepo: repository.NewAccountsRepository(db)}
 }
 
 func (s *LedgerService) CreateAccount(ctx context.Context, account database.Account) error {
-	err := s.repo.CreateAccount(ctx, account)
+	err := s.ledgerRepo.CreateAccount(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -38,14 +40,23 @@ func (s *LedgerService) CreateAccount(ctx context.Context, account database.Acco
 func (s *LedgerService) PostTransaction(ctx context.Context, transaction Transaction) error {
 	var totalDebit, totalCredit int64
 	// Validate transaction is balanced
+	if len(transaction.Entries) == 0 {
+		return fmt.Errorf("transaction must have at least one entry")
+	}
 	for _, entry := range transaction.Entries {
 		switch entry.Type {
 		case Debit:
 			totalDebit += entry.Amount
 		case Credit:
 			totalCredit += entry.Amount
+		default:
+			return fmt.Errorf("transaction enytries not balanced: %s", entry.Type)
+		}
+		if entry.Amount <= 0 {
+			return fmt.Errorf("entry amount must be greater than zero")
 		}
 	}
+
 	if totalDebit != totalCredit {
 		return ErrUnbalancedTransaction
 	}
@@ -53,41 +64,42 @@ func (s *LedgerService) PostTransaction(ctx context.Context, transaction Transac
 	if err != nil {
 		return err
 	}
-	// Verify account exists
+	defer tx.Rollback()
 	transactionId := uuid.New()
+	if transaction.Id != uuid.Nil {
+		transactionId = transaction.Id
+	}
+
 	createdAt := time.Now()
 	// Create transaction
-	err = s.repo.CreateTransactionWithTx(ctx, tx, database.Transaction{
+	err = s.ledgerRepo.CreateTransactionWithTx(ctx, tx, database.Transaction{
 		ID:        transactionId,
 		CreatedAt: createdAt,
 		UpdatedAt: createdAt,
 		Type:      transaction.Type,
 	})
 	if err != nil {
-		tx.Rollback()
 		return fmt.Errorf("error at transaction creation: %v", err)
 	}
 	// Verify accounts exist
 	for _, entry := range transaction.Entries {
-		_, err := s.repo.GetAccount(ctx, entry.AccountId)
+		_, err := s.ledgerRepo.GetAccountByID(ctx, entry.AccountId)
 		if err != nil {
-			tx.Rollback()
-			return ErrAccountNotFound
+			return fmt.Errorf("error at account verification: %v", err)
 		}
 	}
 	// Create entries
 	for _, entry := range transaction.Entries {
-		err = s.repo.CreateEntryWithTx(ctx, tx, database.Entry{
+		err = s.ledgerRepo.CreateEntryWithTx(ctx, tx, database.Entry{
 			ID:            uuid.New(),
 			AccountID:     entry.AccountId,
 			TransactionID: transactionId,
-			Amount:        int64(entry.Amount),
+			Amount:        entry.Amount,
 			Type:          string(entry.Type),
 			CreatedAt:     createdAt,
 			UpdatedAt:     createdAt,
 		})
 		if err != nil {
-			tx.Rollback()
 			return err
 		}
 	}
@@ -104,18 +116,18 @@ func (s *LedgerService) CreateEntry(ctx context.Context, entry []database.Create
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback()
 	// Verify account exists
 	for _, entry := range entry {
-		_, err := s.repo.GetAccount(ctx, entry.AccountID)
+		_, err := s.ledgerRepo.GetAccountByID(ctx, entry.AccountID)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				tx.Rollback()
 				return ErrAccountNotFound
 			}
 			tx.Rollback()
 			return err
 		}
-		err = s.repo.CreateEntryWithTx(ctx, tx, database.Entry{
+		err = s.ledgerRepo.CreateEntryWithTx(ctx, tx, database.Entry{
 			ID:        uuid.New(),
 			AccountID: entry.AccountID,
 			Amount:    entry.Amount,
@@ -124,7 +136,6 @@ func (s *LedgerService) CreateEntry(ctx context.Context, entry []database.Create
 			UpdatedAt: time.Now(),
 		})
 		if err != nil {
-			tx.Rollback()
 			return err
 		}
 	}
@@ -136,21 +147,13 @@ func (s *LedgerService) CreateEntry(ctx context.Context, entry []database.Create
 }
 
 // GetBalance calculates the current balance for a given account
-func (s *LedgerService) GetBalance(ctx context.Context, accountId uuid.UUID) (float64, error) {
-	entries, err := s.repo.GetTransactionEntries(ctx, accountId)
+func (s *LedgerService) GetBalance(ctx context.Context, accountType string) (int64, error) {
+	balance, err := s.ledgerRepo.GetAccountBalance(ctx, accountType)
 	if err != nil {
 		return 0, err
 	}
-	var balance float64
-	for _, entry := range entries {
-		switch entry.Type {
-		case "Debit":
-			balance += float64(entry.Amount)
-		case "Credit":
-			balance -= float64(entry.Amount)
-		}
-	}
 	return balance, nil
+
 }
 
 // GetAccountHistory returns the transaction history for a given account
@@ -159,7 +162,7 @@ func (s *LedgerService) GetAccountHistory(ctx context.Context, accountId string)
 	if err != nil {
 		return nil, err
 	}
-	entries, err := s.repo.GetTransactionEntries(ctx, id)
+	entries, err := s.ledgerRepo.GetTransactionEntries(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -175,12 +178,8 @@ func (s *LedgerService) GetAccountHistory(ctx context.Context, accountId string)
 	return result, nil
 }
 
-func (s *LedgerService) GetAccount(ctx context.Context, accountId string) (database.Account, error) {
-	id, err := uuid.Parse(accountId)
-	if err != nil {
-		return database.Account{}, err
-	}
-	acc, err := s.repo.GetAccount(ctx, id)
+func (s *LedgerService) GetAccount(ctx context.Context, accountRef string) (database.Account, error) {
+	acc, err := s.ledgerRepo.GetAccount(ctx, accountRef)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return database.Account{}, ErrAccountNotFound
@@ -189,9 +188,19 @@ func (s *LedgerService) GetAccount(ctx context.Context, accountId string) (datab
 	}
 	return acc, nil
 }
+func (s *LedgerService) GetAccountDetails(ctx context.Context, accountRef string) (database.GetAccountDetailsRow, error) {
+	acc, err := s.accountRepo.GetAccountDetails(ctx, accountRef)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return database.GetAccountDetailsRow{}, ErrAccountNotFound
+		}
+		return database.GetAccountDetailsRow{}, err
+	}
+	return acc, nil
+}
 
 func (s *LedgerService) GetClient(ctx context.Context, clientId uuid.UUID) (database.Client, error) {
-	client, err := s.repo.GetClientByID(ctx, clientId)
+	client, err := s.clientRepo.GetClientByID(ctx, clientId)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return database.Client{}, ErrClientNotFound
@@ -202,61 +211,57 @@ func (s *LedgerService) GetClient(ctx context.Context, clientId uuid.UUID) (data
 }
 
 // Transfer funds between accounts
-func (s *LedgerService) Transfer(ctx context.Context, debitAccountID, creditAccountID uuid.UUID, amount int64) error {
+func (s *LedgerService) Transfer(ctx context.Context, debitAccountID, creditAccountID uuid.UUID, amount int64, investmentType string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
+	defer tx.Rollback()
 	if err != nil {
 		return err
 	}
 	// Verify accounts exist
-	_, err = s.repo.GetAccount(ctx, debitAccountID)
+	_, err = s.ledgerRepo.GetAccountByID(ctx, debitAccountID)
 	if err != nil {
-		tx.Rollback()
 		return ErrAccountNotFound
 	}
-	_, err = s.repo.GetAccount(ctx, creditAccountID)
+	_, err = s.ledgerRepo.GetAccountByID(ctx, creditAccountID)
 	if err != nil {
-		tx.Rollback()
 		return ErrAccountNotFound
 	}
 	transactionID := uuid.New()
 	createdAt := time.Now()
 	// Create transaction
-	err = s.repo.CreateTransactionWithTx(ctx, tx, database.Transaction{
+	err = s.ledgerRepo.CreateTransactionWithTx(ctx, tx, database.Transaction{
 		ID:        transactionID,
 		CreatedAt: createdAt,
 		UpdatedAt: createdAt,
-		Type:      "Transfer",
+		Type:      investmentType,
 	})
 	if err != nil {
-		tx.Rollback()
 		return err
 	}
 	// Create debit entry
-	err = s.repo.CreateEntryWithTx(ctx, tx, database.Entry{
+	err = s.ledgerRepo.CreateEntryWithTx(ctx, tx, database.Entry{
 		ID:            uuid.New(),
 		AccountID:     debitAccountID,
 		TransactionID: transactionID,
 		Amount:        amount,
-		Type:          "Credit",
+		Type:          string(Debit),
 		CreatedAt:     createdAt,
 		UpdatedAt:     createdAt,
 	})
 	if err != nil {
-		tx.Rollback()
 		return err
 	}
 	// Create credit entry
-	err = s.repo.CreateEntryWithTx(ctx, tx, database.Entry{
+	err = s.ledgerRepo.CreateEntryWithTx(ctx, tx, database.Entry{
 		ID:            uuid.New(),
 		AccountID:     creditAccountID,
 		TransactionID: transactionID,
 		Amount:        amount,
-		Type:          "Debit",
+		Type:          string(Credit),
 		CreatedAt:     createdAt,
 		UpdatedAt:     createdAt,
 	})
 	if err != nil {
-		tx.Rollback()
 		return err
 	}
 	err = tx.Commit()

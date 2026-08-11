@@ -1,6 +1,7 @@
 -- name: CreateInvestment :one
 INSERT INTO investments (
     id,
+    reference,
     client_id,
     principal_initial,
     principal_current,
@@ -14,22 +15,34 @@ INSERT INTO investments (
     gen_random_uuid(),
     $1,
     $2,
-    $2,
+    $3,
+    $3,
     2.5,
     'active',
     0,
-    $3,
+    $4,
     NOW(),
     NOW()
 )
 RETURNING *;
 
+-- name: GetInvestmentByReference :one
+SELECT * FROM investments WHERE reference = $1;
+    
+-- name: UpdateInvestmentPrincipal :one
+UPDATE investments 
+SET principal_current =  $1,
+updated_at = NOW()
+WHERE id = $2
+RETURNING *;
+
+     
 -- name: GetInvestmentByID :one
 SELECT * FROM investments WHERE id = $1;
 
 -- name: UpdateInvestmentAccrual :exec
 UPDATE investments
-SET accrued_interest = accrued_interest + $1, 
+SET accrued_interest = $1, 
 next_accrual_at = $2, 
 last_accrual_at = $3,
 updated_at = $4

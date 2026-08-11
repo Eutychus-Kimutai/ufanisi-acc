@@ -2,7 +2,9 @@ package commands
 
 import (
 	"encoding/json"
+	"github.com/google/uuid"
 	"log"
+	"time"
 )
 
 type CommandType string
@@ -11,17 +13,45 @@ const (
 	PostTransaction               CommandType = "POST_TRANSACTION"
 	ApplyLoanRepayment            CommandType = "APPLY_LOAN_REPAYMENT"
 	UnresolvedPayment             CommandType = "UNRESOLVED_PAYMENT"
-	InvestmentCreated             CommandType = "INVESTMENT_CREATED"
+	PaymentCompleted              CommandType = "PAYMENT_COMPLETED"
 	InvestmentAccrued             CommandType = "INVESTMENT_ACCRUED"
 	InvestmentWithdrawalRequested CommandType = "INVESTMENT_WITHDRAWAL_REQUESTED"
 	InvestmentWithdrawalProcessed CommandType = "INVESTMENT_WITHDRAWAL_PROCESSED"
 	InvestmentMatured             CommandType = "INVESTMENT_MATURED"
+	ResolvePayment                CommandType = "RESOLVE_PAYMENT"
+	PaymentResolved               CommandType = "PAYMENT_RESOLVED"
 )
 
 type Entry struct {
-	AccountID string `json:"account_id"`
-	Amount    int64  `json:"amount"`
-	Type      string `json:"type"`
+	TransactionID string `json:"transaction_id"`
+	AccountID     string `json:"account_id"`
+	Amount        int64  `json:"amount"`
+	Type          string `json:"type"`
+}
+
+type PaymentResolvedPayload struct {
+	IdempotencyKey string    `json:"payment_id"`
+	ResolvedAt     time.Time `json:"resolved_at"`
+}
+type ResolvePaymentPayload struct {
+	PaymentID   uuid.UUID `json:"payment_id"`
+	PaymentRef  string    `json:"payment_ref"`
+	ClientRef   string    `json:"client_ref"`
+	Amount      int64     `json:"amount"`
+	ExternalId  string    `json:"external_id"`
+	AccountRef  string    `json:"account_ref"`
+	PhoneNumber string    `json:"phone_number"`
+}
+type PaymentCompletedPayload struct {
+	IdempotencyKey string `json:"idempotency_key"`
+	ExternalId     string `json:"external_id"`
+	Amount         int64  `json:"amount"`
+	PaymentType    string `json:"payment_channel"`
+	PhoneNumber    string `json:"phone_number"`
+	ClientRef      string `json:"client_ref"`
+	AccountRef     string `json:"account_ref"`
+	Destination    string `json:"destination"`
+	RawEvent       string `json:"raw_event"`
 }
 
 type LoanRepaymentPayload struct {
@@ -33,21 +63,11 @@ type LoanRepaymentPayload struct {
 }
 
 type UnresolvedPaymentPayload struct {
-	ClientRef      string `json:"client_ref"`
-	Amount         int64  `json:"amount"`
-	PaymentChannel string `json:"payment_channel"`
-	ExternalId     string `json:"external_id"`
-	Reason         string `json:"reason"`
-}
-
-type InvestmentCreatedPayload struct {
-	Id              string  `json:"id"`
-	ClientId        string  `json:"client_id"`
-	Principal       int64   `json:"principal"`
-	MonthlyRate     float64 `json:"monthly_rate"`
-	Status          string  `json:"status"`
-	AccruedInterest int64   `json:"accrued_interest"`
-	NextAccrualDate string  `json:"next_accrual_date"`
+	ClientRef   string `json:"client_ref"`
+	Amount      int64  `json:"amount"`
+	PaymentType string `json:"payment_channel"`
+	ExternalId  string `json:"external_id"`
+	Reason      string `json:"reason"`
 }
 
 type InvestmentAccruedPayload struct {

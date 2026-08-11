@@ -1,6 +1,6 @@
 -- +goose Up
 INSERT INTO accounts (id, name, type)
-SELECT gen_random_uuid(), 'Capital Account', 'liability'
+SELECT gen_random_uuid(), 'Capital Account', 'asset'
 WHERE NOT EXISTS (SELECT 1 FROM accounts WHERE name = 'Capital Account');
 
 -- +goose Down

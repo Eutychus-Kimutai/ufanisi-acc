@@ -1,17 +1,16 @@
-package main
+package investment
 
 import (
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
-	"strconv"
+	"log"
 	"time"
 
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/commands"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/database"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/domain"
-	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/payment"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/rabbitmq"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/repository"
 	"github.com/google/uuid"
@@ -22,55 +21,47 @@ type Publisher interface {
 	Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
 }
 type Worker struct {
-	db                 *sql.DB
-	ledger             *domain.LedgerService
-	repo               *repository.InvestmentRepository
-	channel            Publisher
-	cfg                *rabbitmq.RabbitConfig
-	capitalAccID       uuid.UUID
-	investorFundsAccID uuid.UUID
+	db           *sql.DB
+	ledger       *domain.LedgerService
+	repo         *repository.InvestmentRepository
+	paymentRepo  *repository.PaymentsRepository
+	channel      Publisher
+	cfg          *rabbitmq.RabbitConfig
+	capitalAccID uuid.UUID
 }
 
-func NewWorker(db *sql.DB, channel Publisher, cfg *rabbitmq.RabbitConfig) (*Worker, error) {
+func NewWorker(db *sql.DB, channel Publisher, cfg *rabbitmq.RabbitConfig, queries *database.Queries) (*Worker, error) {
 	capitalAccID, err := repository.NewRepository(db).GetCapitalAccount(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get capital account: %v", err)
 	}
-	investorFundsAccID, err := repository.NewRepository(db).GetInvestorFundsAccount(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("failed to get investor funds account: %v", err)
-	}
+
 	return &Worker{
-		db:                 db,
-		repo:               repository.NewInvestmentRepository(db),
-		ledger:             domain.NewLedgerService(db, repository.NewRepository(db)),
-		channel:            channel,
-		cfg:                cfg,
-		capitalAccID:       capitalAccID,
-		investorFundsAccID: investorFundsAccID,
+		db:           db,
+		repo:         repository.NewInvestmentRepository(db),
+		paymentRepo:  repository.NewPaymentsRepository(db),
+		ledger:       domain.NewLedgerService(db, repository.NewRepository(db), repository.NewClientRepository(queries)),
+		channel:      channel,
+		cfg:          cfg,
+		capitalAccID: capitalAccID,
 	}, nil
 }
 
-func (w *Worker) HandlePaymentEvent(ctx context.Context, event payment.PaymentEvent) error {
-	investment, client, err := w.resolveInvestment(ctx, event)
-	if err != nil {
-		return fmt.Errorf("failed to resolve investment: %v", err)
+func (w *Worker) HandlePaymentEvent(ctx context.Context, event commands.ResolvePaymentPayload) error {
+	if event.Amount <= 0 {
+		return errors.New("payment amount must be greater than zero")
 	}
-
-	rate, err := strconv.ParseFloat(investment.MonthlyRate, 64)
+	_, err := w.resolveInvestment(ctx, event)
 	if err != nil {
-		return fmt.Errorf("failed to parse monthly rate: %v", err)
+		fmt.Printf("Failed to resolve investment: %v\n", err)
+		return err
 	}
+	//log.Printf("Successfully resolved investment: %+v\n", i)
 	cmd, err := commands.NewCommand(
-		commands.InvestmentCreated,
-		commands.InvestmentCreatedPayload{
-			Id:              investment.ID.String(),
-			ClientId:        client.ID.String(),
-			Principal:       investment.PrincipalCurrent,
-			Status:          investment.Status,
-			AccruedInterest: investment.AccruedInterest,
-			NextAccrualDate: investment.NextAccrualAt.Format("2006-01-02"),
-			MonthlyRate:     rate,
+		commands.PaymentResolved,
+		commands.PaymentResolvedPayload{
+			ResolvedAt:     time.Now(),
+			IdempotencyKey: event.ExternalId,
 		},
 	)
 	if err != nil {
@@ -78,7 +69,7 @@ func (w *Worker) HandlePaymentEvent(ctx context.Context, event payment.PaymentEv
 	}
 	err = rabbitmq.PublishCommand(
 		w.channel,
-		w.cfg.Queues.Investment,
+		w.cfg.Queues.Resolved,
 		cmd,
 	)
 	if err != nil {
@@ -87,65 +78,89 @@ func (w *Worker) HandlePaymentEvent(ctx context.Context, event payment.PaymentEv
 	return nil
 }
 
-func (w *Worker) resolveInvestment(ctx context.Context, event payment.PaymentEvent) (*database.Investment, *database.Client, error) {
-	if event.ClientRef == "" {
-		return nil, nil, errors.New("missing client reference in payment event")
-	}
-	if event.Destination != payment.DestinationAccountInvestment {
-		return nil, nil, errors.New("invalid destination for investment payment")
-	}
+func (w *Worker) resolveInvestment(ctx context.Context, event commands.ResolvePaymentPayload) (*database.Investment, error) {
 
-	accountRef := event.AccountReference
-	account, err := w.ledger.GetAccount(ctx, accountRef)
+	accountRef := event.PaymentRef
+	account, err := w.ledger.GetAccountDetails(ctx, accountRef)
 	if err != nil {
 		fmt.Printf("Failed to get account: %v", err)
-		return nil, nil, err
+		return nil, err
 	}
 	if account.Type != "investment" {
-		return nil, nil, errors.New("account is not of type investment")
+		return nil, errors.New("account is not of type investment")
 	}
-	parsedClientID, err := uuid.Parse(event.ClientRef)
-	if err != nil {
-		return nil, nil, fmt.Errorf("invalid client reference: %v", err)
+	// check if the investment already exists for this payment reference
+	existingInv, err := w.repo.GetInvestmentByReference(ctx, accountRef)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("failed to check existing investment: %v", err)
 	}
+	if existingInv == nil {
 
-	client, err := w.ledger.GetClient(ctx, parsedClientID)
+		// Save the investment to the database
+		inv := database.Investment{
+			Reference:        event.PaymentRef,
+			PrincipalInitial: event.Amount,
+			NextAccrualAt:    time.Now().AddDate(0, 1, 0), // set next accrual date to one month from now
+			ClientID:         account.ClientID,
+		}
+		createdInv, err := w.repo.CreateInvestment(ctx, inv)
+		if err != nil {
+			return nil, err
+		}
+		// Post a ledger transaction to record the investment deposit
+		tx := domain.Transaction{
+			Id:   uuid.New(),
+			Type: "investment_deposit",
+			Entries: []domain.Entry{
+				{
+					AccountId: w.capitalAccID,
+					Amount:    event.Amount,
+					Type:      domain.Debit,
+				},
+				{
+					AccountId: account.ID,
+					Amount:    event.Amount,
+					Type:      domain.Credit,
+				},
+			},
+		}
+		err = w.ledger.PostTransaction(ctx, tx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to post ledger transaction: %v", err)
+		}
+
+		return createdInv, nil
+	}
+	// Update the existing investment with the new amount
+	updatedInv, err := w.repo.UpdateInvestmentPrincipal(ctx, database.Investment{
+		PrincipalCurrent: existingInv.PrincipalCurrent + event.Amount,
+		ID:               existingInv.ID,
+	})
 	if err != nil {
-		fmt.Printf("Failed to get client: %v", err)
-		return nil, nil, err
+		return nil, fmt.Errorf("failed to update investment: %v", err)
 	}
-	// Save the investment to the database
-	inv := database.Investment{
-		ClientID:         client.ID,
-		PrincipalInitial: event.Amount,
-		PrincipalCurrent: event.Amount,
-		AccruedInterest:  0,
-	}
-	createdInv, err := w.repo.CreateInvestment(ctx, inv)
-	if err != nil {
-		return nil, nil, err
-	}
+	log.Printf("Updated existing investment: %+v\n", event)
 	tx := domain.Transaction{
 		Id:   uuid.New(),
 		Type: "investment_deposit",
 		Entries: []domain.Entry{
 			{
-				AccountId: w.investorFundsAccID,
-				Amount:    int64(event.Amount),
-				Type:      "Credit",
+				AccountId: w.capitalAccID,
+				Amount:    event.Amount,
+				Type:      domain.Debit,
 			},
 			{
 				AccountId: account.ID,
-				Amount:    int64(event.Amount),
-				Type:      "Debit",
+				Amount:    event.Amount,
+				Type:      domain.Credit,
 			},
 		},
 	}
 	err = w.ledger.PostTransaction(ctx, tx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to post ledger transaction: %v", err)
+		return nil, fmt.Errorf("failed to post ledger transaction: %v", err)
 	}
-	return createdInv, &client, nil
+	return updatedInv, nil
 }
 
 func (w *Worker) RequestWithdrawal(ctx context.Context, invID uuid.UUID, amount int64, noticeMontrhs int32) error {
@@ -212,7 +227,7 @@ func (w *Worker) ProcessEligibleWithdrawals(ctx context.Context) error {
 
 		// transfer funds (principal + accrued interest) to client account
 
-		err = w.ledger.Transfer(ctx, w.capitalAccID, wdr.InvestmentID, wdr.Amount)
+		err = w.ledger.Transfer(ctx, w.capitalAccID, wdr.InvestmentID, wdr.Amount, "withdrawal_approved")
 		if err != nil {
 			fmt.Printf("Failed to transfer funds for withdrawal ID %v: %v\n", wdr.ID, err)
 			continue

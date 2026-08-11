@@ -1,15 +1,14 @@
-package main
+package investment
 
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"testing"
 	"time"
 
 	testutils "github.com/Eutychus-Kimutai/ufanisi-acc/cmd/test_utils"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/commands"
-	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/payment"
+	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/database"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/rabbitmq"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/repository"
 	"github.com/google/uuid"
@@ -41,10 +40,10 @@ func SetupDBWithCleanup(t *testing.T) (*sql.DB, func()) {
 	return db, cleanup
 }
 
-func createTestAccount(t *testing.T, db *sql.DB, accountName string) uuid.UUID {
+func createTestAccount(t *testing.T, db *sql.DB, clientId uuid.UUID, accountName string) uuid.UUID {
 	accountID := uuid.New()
 	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO accounts (id, name, type) VALUES ($1, $2, 'investment')`, accountID, accountName+accountID.String())
+		`INSERT INTO accounts (id, name, client_id, type) VALUES ($1, $2, $3, 'investment')`, accountID, accountName, clientId)
 	require.NoError(t, err, "Failed to insert test account")
 	return accountID
 }
@@ -60,29 +59,26 @@ func createTestClient(t *testing.T, db *sql.DB, clientType string) uuid.UUID {
 func seedInvestmentForAccrual(t *testing.T, db *sql.DB, clientID uuid.UUID) uuid.UUID {
 	invID := uuid.New()
 	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO investments (id, client_id, principal_initial, principal_current, status, monthly_rate, last_accrual_at, next_accrual_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-		invID, clientID, int64(1000), int64(1000), "active", "2.5000", time.Now().AddDate(0, -1, 0), time.Now().AddDate(0, 1, 0))
+		`INSERT INTO investments (id, reference, client_id, principal_initial, principal_current, status, monthly_rate, last_accrual_at, next_accrual_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		invID, "INVACC-2026", clientID, int64(1000), int64(1000), "active", "2.5000", time.Now().AddDate(0, -1, 0), time.Now().AddDate(0, 1, 0))
 	require.NoError(t, err, "Failed to insert test investment")
 	return invID
 }
 
-func newValidPaymentEvent(accountID, clientID uuid.UUID) payment.PaymentEvent {
-	return payment.PaymentEvent{
-		Amount:           1000,
-		ExternalId:       "INVEXT123",
-		PaymentChannel:   "mobile_money",
-		AccountReference: accountID.String(),
-		Destination:      "investment",
-		ClientRef:        clientID.String(),
-		PhoneNumber:      "0712345678",
+func newValidPaymentEvent(clientID uuid.UUID) commands.ResolvePaymentPayload {
+	return commands.ResolvePaymentPayload{
+		Amount:      1000,
+		PaymentRef:  "Test-2026",
+		ExternalId:  "EXT123",
+		PhoneNumber: "0712345678",
 	}
 }
 
-func BuildWorkerAndDispatcher(t *testing.T, db *sql.DB, mockCh *testutils.MockChannel) (*Worker, *OutboxDispatcher, *AccrualWorker) {
+func BuildWorkerAndDispatcher(t *testing.T, db *sql.DB, mockCh *testutils.MockChannel, queries *database.Queries) (*Worker, *OutboxDispatcher, *AccrualWorker) {
 	queues := buildQueuesConfig()
 	worker, err := NewWorker(db, mockCh, &rabbitmq.RabbitConfig{
 		Queues: queues,
-	})
+	}, queries)
 	require.NoError(t, err, "Failed to create worker")
 	dispatcher := &OutboxDispatcher{
 		repo:    repository.NewOutboxRepository(db),
@@ -101,25 +97,27 @@ func BuildWorkerAndDispatcher(t *testing.T, db *sql.DB, mockCh *testutils.MockCh
 
 func TestHandlePaymentEvent(t *testing.T) {
 	t.Parallel()
-	setup := func(t *testing.T) (*testutils.MockChannel, *Worker, payment.PaymentEvent, *AccrualWorker, *OutboxDispatcher, func()) {
-		db, cleanup := SetupDBWithCleanup(t)
+	setup := func(t *testing.T) (*testutils.MockChannel, *Worker, commands.ResolvePaymentPayload, *AccrualWorker, *OutboxDispatcher, func()) {
+		db, dbCleanup := SetupDBWithCleanup(t)
 		mockCh := &testutils.MockChannel{}
-		accountID := createTestAccount(t, db, "Test Investment Account")
-		loanClientID := createTestClient(t, db, "loan")
+
 		invClientID := createTestClient(t, db, "investment")
+		accountID := createTestAccount(t, db, invClientID, "Test-2026")
+		loanClientID := createTestClient(t, db, "loan")
 		invID := seedInvestmentForAccrual(t, db, invClientID)
 		var createdInvestmentID uuid.UUID
-		worker, dispatcher, accrualWorker := BuildWorkerAndDispatcher(t, db, mockCh)
+		worker, dispatcher, accrualWorker := BuildWorkerAndDispatcher(t, db, mockCh, database.New(db))
 
-		event := newValidPaymentEvent(accountID, loanClientID)
+		event := newValidPaymentEvent(invClientID)
 
 		ctx := context.Background()
 
-		cleanup = func() {
+		cleanup := func() {
+			defer dbCleanup()
 			_, err := db.ExecContext(ctx, `DELETE FROM entries WHERE account_id = $1`, accountID)
 			require.NoError(t, err, "Failed to clean up entries for test account")
 			if worker != nil {
-				_, err = db.ExecContext(ctx, `DELETE FROM entries WHERE account_id = $1`, worker.investorFundsAccID)
+				_, err = db.ExecContext(ctx, `DELETE FROM entries WHERE account_id = $1`, worker.capitalAccID)
 				require.NoError(t, err, "Failed to clean up entries for investor funds account")
 			}
 			_, err = db.ExecContext(ctx, `DELETE FROM transactions`)
@@ -152,59 +150,16 @@ func TestHandlePaymentEvent(t *testing.T) {
 		assert.Error(t, err, "Expected error for invalid amount")
 	})
 
-	t.Run("Test invalid destination account", func(t *testing.T) {
+	t.Run("Test db persistence", func(t *testing.T) {
 		_, worker, event, _, _, cleanup := setup(t)
 		t.Cleanup(cleanup)
-		event.Destination = payment.DestinationAccount("savings")
-		err := worker.HandlePaymentEvent(context.Background(), event)
-		assert.Error(t, err, "Expected error for invalid destination account")
-	})
-
-	t.Run("test handle payment with published message", func(t *testing.T) {
-		mockCh, worker, event, _, _, cleanup := setup(t)
-		t.Cleanup(cleanup)
-
 		err := worker.HandlePaymentEvent(context.Background(), event)
 		assert.NoError(t, err, "Expected no error for valid payment event")
-		assert.Equal(t, 1, len(mockCh.PublishedMessages), "Expected one message to be published")
-		publishedMsg := mockCh.PublishedMessages[0]
-		assert.Equal(t, worker.cfg.Queues.Investment, publishedMsg.Queue, "Expected message to be published to the correct queue")
-	})
-
-	t.Run("Verify published messages correctness and db persistence", func(t *testing.T) {
-		mockCh, worker, event, _, _, cleanup := setup(t)
-		t.Cleanup(cleanup)
-		err := worker.HandlePaymentEvent(context.Background(), event)
-		assert.NoError(t, err, "Expected no error for valid payment event")
-		assert.Equal(t, 1, len(mockCh.PublishedMessages), "Expected one message to be published")
-		publishedMsg := mockCh.PublishedMessages[0]
-		assert.Equal(t, worker.cfg.Queues.Investment, publishedMsg.Queue, "Expected message to be published to the correct queue")
-		type cmd struct {
-			CommandType string                            `json:"command_type"`
-			Payload     commands.InvestmentCreatedPayload `json:"payload"`
-		}
-		wrapper := cmd{}
-		err = json.Unmarshal(publishedMsg.Payload, &wrapper)
-		assert.NoError(t, err, "Expected to unmarshal published message without error")
-
-		payload := wrapper.Payload
-		assert.NoError(t, err, "Expected to unmarshal published message payload without error")
-		assert.Equal(t, event.ClientRef, payload.ClientId, "Expected ClientId in published message to match the test client ID")
-		assert.Equal(t, event.Amount, payload.Principal, "Expected Principal in published message to match the payment event amount")
-		assert.Equal(t, 2.5, payload.MonthlyRate, "Expected MonthlyRate in published message to be 2.5")
-		assert.Equal(t, "active", payload.Status, "Expected Status in published message to be 'active'")
-		assert.Equal(t, int64(0), payload.AccruedInterest, "Expected AccruedInterest in published message to be 0 for a new investment")
-		assert.NotEmpty(t, payload.NextAccrualDate, "Expected NextAccrualDate in published message to be set")
-		assert.NotEmpty(t, payload.Id, "Expected Id in published message to be set")
 
 		// Verify the investment was created in the database with correct values
-		dbInvId, err := uuid.Parse(payload.Id)
-		require.NoError(t, err, "Expected Id in published message to be a valid UUID")
-
 		invRepo := repository.NewInvestmentRepository(worker.db)
-		inv, err := invRepo.GetInvestmentByID(context.Background(), dbInvId)
+		inv, err := invRepo.GetInvestmentByReference(context.Background(), event.PaymentRef)
 		require.NoError(t, err, "Expected to retrieve investment from database without error")
-		assert.Equal(t, event.ClientRef, inv.ClientID.String(), "Expected ClientID in database to match the test client ID")
 		assert.Equal(t, event.Amount, inv.PrincipalInitial, "Expected PrincipalInitial in database to match the payment event amount")
 		assert.Equal(t, "2.5000", inv.MonthlyRate, "Expected MonthlyRate in database to be 2.5")
 		assert.NotEmpty(t, inv.NextAccrualAt, "Expected NextAccrualAt in database to be set")
@@ -217,9 +172,16 @@ func TestHandlePaymentEvent(t *testing.T) {
 		assert.NoError(t, err, "Expected no error for valid payment event")
 
 		// Test ledger balances after processing the payment event
-		ledgerBalance, err := worker.ledger.GetBalance(context.Background(), uuid.MustParse(event.AccountReference))
-		require.NoError(t, err, "Expected to get ledger balance without error")
-		expectedBalance := float64(1000)
-		assert.Equal(t, expectedBalance, ledgerBalance, "Expected account balance to be updated correctly after processing payment event")
+		debitBalance, err := worker.ledger.GetBalance(context.Background(), "debit")
+		if err != nil {
+			t.Fatalf("Failed to get debit balance: %v", err)
+		}
+		creditBalance, err := worker.ledger.GetBalance(context.Background(), "credit")
+		if err != nil {
+			t.Fatalf("Failed to get credit balance: %v", err)
+		}
+		if debitBalance != creditBalance {
+			t.Fatalf("Ledger balances do not match: debit=%d, credit=%d", debitBalance, creditBalance)
+		}
 	})
 }

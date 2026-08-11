@@ -120,7 +120,8 @@ func (q *Queries) GetWithdrawalsByInvestmentId(ctx context.Context, investmentID
 
 const listEligibleWithdrawals = `-- name: ListEligibleWithdrawals :many
 SELECT id, investment_id, amount, notice_period_months, requested_at, eligible_at, status, created_at, updated_at FROM withdrawals_payable
-WHERE eligible_at >= requested_at + INTERVAL '1 month' * notice_period_months
+WHERE eligible_at <= NOW() 
+AND eligible_at >= requested_at + INTERVAL '1 month' * notice_period_months
 AND status = 'pending'
 ORDER BY eligible_at ASC
 `

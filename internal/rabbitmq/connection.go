@@ -13,8 +13,8 @@ func NewConnection(cfg *RabbitConfig) (*amqp.Connection, error) {
 	connStrring := fmt.Sprintf("amqp://%s:%s@%s:%d/%s", cfg.Username, cfg.Password, cfg.Host, cfg.Port, cfg.Vhost)
 	conn, err := amqp.Dial(connStrring)
 	if err != nil {
-		log.Printf("Failed to connect to RabbitMQ: %s\n", err)
-		return nil, fmt.Errorf("Connection to rabbitmq failed: %s", err)
+		log.Printf("failed to connect to RabbitMQ: %s\n", err)
+		return nil, fmt.Errorf("connection to rabbitmq failed: %s", err)
 	}
 
 	return conn, nil
@@ -23,8 +23,8 @@ func NewConnection(cfg *RabbitConfig) (*amqp.Connection, error) {
 func NewChannel(conn *amqp.Connection) (*amqp.Channel, error) {
 	ch, err := conn.Channel()
 	if err != nil {
-		log.Printf("Failed to open a channel: %s\n", err)
-		return nil, fmt.Errorf("Failed to open a channel: %s", err)
+		log.Printf("dailed to open a channel: %s\n", err)
+		return nil, fmt.Errorf("failed to open a channel: %s", err)
 	}
 
 	return ch, nil
@@ -59,7 +59,7 @@ func QueueDeclare(ch *amqp.Channel, cfg *RabbitConfig) error {
 	)
 	if err != nil {
 		log.Printf("Failed to declare loan queue: %s\n", err)
-		return fmt.Errorf("Failed to declare loan queue: %s", err)
+		return fmt.Errorf("failed to declare loan queue: %s", err)
 	}
 	_, err = ch.QueueDeclare(
 		cfg.Queues.Loan+".dlq",
@@ -71,7 +71,7 @@ func QueueDeclare(ch *amqp.Channel, cfg *RabbitConfig) error {
 	)
 	if err != nil {
 		log.Printf("Failed to declare loan DLQ: %s\n", err)
-		return fmt.Errorf("Failed to declare loan DLQ: %s", err)
+		return fmt.Errorf("failed to declare loan DLQ: %s", err)
 	}
 	_, err = ch.QueueDeclare(
 		cfg.Queues.Investment,
@@ -86,7 +86,7 @@ func QueueDeclare(ch *amqp.Channel, cfg *RabbitConfig) error {
 	)
 	if err != nil {
 		log.Printf("Failed to declare investment queue: %s\n", err)
-		return fmt.Errorf("Failed to declare investment queue: %s", err)
+		return fmt.Errorf("failed to declare investment queue: %s", err)
 	}
 	_, err = ch.QueueDeclare(
 		cfg.Queues.Investment+".dlq",
@@ -98,7 +98,7 @@ func QueueDeclare(ch *amqp.Channel, cfg *RabbitConfig) error {
 	)
 	if err != nil {
 		log.Printf("Failed to declare investment DLQ: %s\n", err)
-		return fmt.Errorf("Failed to declare investment DLQ: %s", err)
+		return fmt.Errorf("failed to declare investment DLQ: %s", err)
 	}
 	_, err = ch.QueueDeclare(
 		cfg.Queues.Unresolved,
@@ -110,7 +110,7 @@ func QueueDeclare(ch *amqp.Channel, cfg *RabbitConfig) error {
 	)
 	if err != nil {
 		log.Printf("Failed to declare unresolved queue: %s\n", err)
-		return fmt.Errorf("Failed to declare unresolved queue: %s", err)
+		return fmt.Errorf("failed to declare unresolved queue: %s", err)
 	}
 	_, err = ch.QueueDeclare(
 		cfg.Queues.Unresolved+".dlq",
@@ -125,7 +125,36 @@ func QueueDeclare(ch *amqp.Channel, cfg *RabbitConfig) error {
 	)
 	if err != nil {
 		log.Printf("Failed to declare unresolved DLQ: %s\n", err)
-		return fmt.Errorf("Failed to declare unresolved DLQ: %s", err)
+		return fmt.Errorf("failed to declare unresolved DLQ: %s", err)
 	}
+	_, err = ch.QueueDeclare(
+		cfg.Queues.Resolved,
+		true,  // durable
+		false, // autoDelete
+		false, // exclusive
+		false, // noWait
+		nil,
+	)
+	if err != nil {
+		log.Printf("Failed to declare investment payment completed queue: %s\n", err)
+		return fmt.Errorf("failed to declare investment payment completed queue: %s", err)
+	}
+	_, err = ch.QueueDeclare(
+		cfg.Queues.Resolved+".dlq",
+		true, // durable
+
+		false, // autoDelete
+		false, // exclusive
+		false, // noWait
+		amqp.Table{
+			"x-dead-letter-exchange":    "",
+			"x-dead-letter-routing-key": cfg.Queues.Resolved + ".dlq",
+		},
+	)
+	if err != nil {
+		log.Printf("Failed to declare investment payment completed DLQ: %s\n", err)
+		return fmt.Errorf("failed to declare investment payment completed DLQ: %s", err)
+	}
+
 	return nil
 }

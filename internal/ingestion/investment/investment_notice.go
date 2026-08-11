@@ -1,4 +1,4 @@
-package main
+package investment
 
 import (
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/commands"

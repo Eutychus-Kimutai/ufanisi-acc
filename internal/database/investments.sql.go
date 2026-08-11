@@ -16,6 +16,7 @@ import (
 const createInvestment = `-- name: CreateInvestment :one
 INSERT INTO investments (
     id,
+    reference,
     client_id,
     principal_initial,
     principal_current,
@@ -29,28 +30,36 @@ INSERT INTO investments (
     gen_random_uuid(),
     $1,
     $2,
-    $2,
+    $3,
+    $3,
     2.5,
     'active',
     0,
-    $3,
+    $4,
     NOW(),
     NOW()
 )
-RETURNING id, client_id, principal_initial, principal_current, monthly_rate, status, accrued_interest, next_accrual_at, last_accrual_at, created_at, updated_at
+RETURNING id, reference, client_id, principal_initial, principal_current, monthly_rate, status, accrued_interest, next_accrual_at, last_accrual_at, created_at, updated_at
 `
 
 type CreateInvestmentParams struct {
+	Reference        string
 	ClientID         uuid.UUID
 	PrincipalInitial int64
 	NextAccrualAt    time.Time
 }
 
 func (q *Queries) CreateInvestment(ctx context.Context, arg CreateInvestmentParams) (Investment, error) {
-	row := q.db.QueryRowContext(ctx, createInvestment, arg.ClientID, arg.PrincipalInitial, arg.NextAccrualAt)
+	row := q.db.QueryRowContext(ctx, createInvestment,
+		arg.Reference,
+		arg.ClientID,
+		arg.PrincipalInitial,
+		arg.NextAccrualAt,
+	)
 	var i Investment
 	err := row.Scan(
 		&i.ID,
+		&i.Reference,
 		&i.ClientID,
 		&i.PrincipalInitial,
 		&i.PrincipalCurrent,
@@ -66,7 +75,7 @@ func (q *Queries) CreateInvestment(ctx context.Context, arg CreateInvestmentPara
 }
 
 const getDueAccruals = `-- name: GetDueAccruals :many
-SELECT id, client_id, principal_initial, principal_current, monthly_rate, status, accrued_interest, next_accrual_at, last_accrual_at, created_at, updated_at FROM investments
+SELECT id, reference, client_id, principal_initial, principal_current, monthly_rate, status, accrued_interest, next_accrual_at, last_accrual_at, created_at, updated_at FROM investments
 WHERE next_accrual_at <= $1 AND status = 'active'
 `
 
@@ -81,6 +90,7 @@ func (q *Queries) GetDueAccruals(ctx context.Context, nextAccrualAt time.Time) (
 		var i Investment
 		if err := rows.Scan(
 			&i.ID,
+			&i.Reference,
 			&i.ClientID,
 			&i.PrincipalInitial,
 			&i.PrincipalCurrent,
@@ -106,7 +116,7 @@ func (q *Queries) GetDueAccruals(ctx context.Context, nextAccrualAt time.Time) (
 }
 
 const getInvestmentByID = `-- name: GetInvestmentByID :one
-SELECT id, client_id, principal_initial, principal_current, monthly_rate, status, accrued_interest, next_accrual_at, last_accrual_at, created_at, updated_at FROM investments WHERE id = $1
+SELECT id, reference, client_id, principal_initial, principal_current, monthly_rate, status, accrued_interest, next_accrual_at, last_accrual_at, created_at, updated_at FROM investments WHERE id = $1
 `
 
 func (q *Queries) GetInvestmentByID(ctx context.Context, id uuid.UUID) (Investment, error) {
@@ -114,6 +124,31 @@ func (q *Queries) GetInvestmentByID(ctx context.Context, id uuid.UUID) (Investme
 	var i Investment
 	err := row.Scan(
 		&i.ID,
+		&i.Reference,
+		&i.ClientID,
+		&i.PrincipalInitial,
+		&i.PrincipalCurrent,
+		&i.MonthlyRate,
+		&i.Status,
+		&i.AccruedInterest,
+		&i.NextAccrualAt,
+		&i.LastAccrualAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getInvestmentByReference = `-- name: GetInvestmentByReference :one
+SELECT id, reference, client_id, principal_initial, principal_current, monthly_rate, status, accrued_interest, next_accrual_at, last_accrual_at, created_at, updated_at FROM investments WHERE reference = $1
+`
+
+func (q *Queries) GetInvestmentByReference(ctx context.Context, reference string) (Investment, error) {
+	row := q.db.QueryRowContext(ctx, getInvestmentByReference, reference)
+	var i Investment
+	err := row.Scan(
+		&i.ID,
+		&i.Reference,
 		&i.ClientID,
 		&i.PrincipalInitial,
 		&i.PrincipalCurrent,
@@ -167,7 +202,7 @@ func (q *Queries) UpdateInvestment(ctx context.Context, arg UpdateInvestmentPara
 
 const updateInvestmentAccrual = `-- name: UpdateInvestmentAccrual :exec
 UPDATE investments
-SET accrued_interest = accrued_interest + $1, 
+SET accrued_interest = $1, 
 next_accrual_at = $2, 
 last_accrual_at = $3,
 updated_at = $4
@@ -191,4 +226,37 @@ func (q *Queries) UpdateInvestmentAccrual(ctx context.Context, arg UpdateInvestm
 		arg.ID,
 	)
 	return err
+}
+
+const updateInvestmentPrincipal = `-- name: UpdateInvestmentPrincipal :one
+UPDATE investments 
+SET principal_current =  $1,
+updated_at = NOW()
+WHERE id = $2
+RETURNING id, reference, client_id, principal_initial, principal_current, monthly_rate, status, accrued_interest, next_accrual_at, last_accrual_at, created_at, updated_at
+`
+
+type UpdateInvestmentPrincipalParams struct {
+	PrincipalCurrent int64
+	ID               uuid.UUID
+}
+
+func (q *Queries) UpdateInvestmentPrincipal(ctx context.Context, arg UpdateInvestmentPrincipalParams) (Investment, error) {
+	row := q.db.QueryRowContext(ctx, updateInvestmentPrincipal, arg.PrincipalCurrent, arg.ID)
+	var i Investment
+	err := row.Scan(
+		&i.ID,
+		&i.Reference,
+		&i.ClientID,
+		&i.PrincipalInitial,
+		&i.PrincipalCurrent,
+		&i.MonthlyRate,
+		&i.Status,
+		&i.AccruedInterest,
+		&i.NextAccrualAt,
+		&i.LastAccrualAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

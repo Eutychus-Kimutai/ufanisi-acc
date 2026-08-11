@@ -12,18 +12,18 @@ import (
 )
 
 const getClientByID = `-- name: GetClientByID :one
-SELECT id, name, client_type FROM clients WHERE id = $1
+SELECT id, name, client_type, created_at, updated_at FROM clients WHERE id = $1
 `
 
-type GetClientByIDRow struct {
-	ID         uuid.UUID
-	Name       string
-	ClientType string
-}
-
-func (q *Queries) GetClientByID(ctx context.Context, id uuid.UUID) (GetClientByIDRow, error) {
+func (q *Queries) GetClientByID(ctx context.Context, id uuid.UUID) (Client, error) {
 	row := q.db.QueryRowContext(ctx, getClientByID, id)
-	var i GetClientByIDRow
-	err := row.Scan(&i.ID, &i.Name, &i.ClientType)
+	var i Client
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.ClientType,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
 	return i, err
 }

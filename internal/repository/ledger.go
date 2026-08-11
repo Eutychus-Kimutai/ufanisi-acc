@@ -37,9 +37,19 @@ func (l *LedgerRepository) CreateAccount(ctx context.Context, account database.A
 	}
 	return nil
 }
+func (l *LedgerRepository) GetAccountBalance(ctx context.Context, accountType string) (int64, error) {
+	balance, err := l.db.GetAccountBalance(ctx, accountType)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrAccountNotFound
+		}
+		return 0, err
+	}
+	return balance, nil
+}
 
-func (l *LedgerRepository) GetAccount(ctx context.Context, id uuid.UUID) (database.Account, error) {
-	acc, err := l.db.GetAccount(ctx, id)
+func (l *LedgerRepository) GetAccount(ctx context.Context, name string) (database.Account, error) {
+	acc, err := l.db.GetAccount(ctx, name)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return database.Account{}, ErrAccountNotFound
@@ -51,6 +61,17 @@ func (l *LedgerRepository) GetAccount(ctx context.Context, id uuid.UUID) (databa
 		Name: acc.Name,
 		Type: acc.Type,
 	}, nil
+}
+
+func (l *LedgerRepository) GetAccountByID(ctx context.Context, accountId uuid.UUID) (database.Account, error) {
+	acc, err := l.db.GetAccountByID(ctx, accountId)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return database.Account{}, ErrAccountNotFound
+		}
+		return database.Account{}, err
+	}
+	return acc, nil
 }
 
 func (l *LedgerRepository) GetTransactionEntries(ctx context.Context, accountId uuid.UUID) ([]database.Entry, error) {
@@ -114,14 +135,6 @@ func (l *LedgerRepository) CreateUnresolvedPayment(ctx context.Context, payment 
 
 func (l *LedgerRepository) GetCapitalAccount(ctx context.Context) (uuid.UUID, error) {
 	accID, err := l.db.GetCapitalAccount(ctx)
-	if err != nil {
-		return uuid.Nil, err
-	}
-	return accID, nil
-}
-
-func (l *LedgerRepository) GetInvestorFundsAccount(ctx context.Context) (uuid.UUID, error) {
-	accID, err := l.db.GetInvestorFundsAccount(ctx)
 	if err != nil {
 		return uuid.Nil, err
 	}

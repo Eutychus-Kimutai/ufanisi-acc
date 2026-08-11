@@ -2,59 +2,48 @@ package transport
 
 import (
 	"context"
+
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
-	"strconv"
-	"time"
+	"sync"
 
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/commands"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/database"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/domain"
+	invworker "github.com/Eutychus-Kimutai/ufanisi-acc/internal/ingestion/investment"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/rabbitmq"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/repository"
 	"github.com/google/uuid"
-	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type Handler struct {
-	ledger       *domain.LedgerService
-	investment   *repository.InvestmentRepository
-	publisher    rabbitmq.Publisher
-	capitalAccID uuid.UUID
-	outboxRepo   *repository.OutboxRepository
-	db           *sql.DB
+	ledger     *domain.LedgerService
+	investment *repository.InvestmentRepository
+	publisher  rabbitmq.Publisher
+	db         *sql.DB
+	cfg        *rabbitmq.RabbitConfig
+
+	invWorker  *invworker.Worker
+	workerOnce sync.Once
+	workerErr  error
 }
 
-type CreateInvestmentRequest struct {
-	AccountID          uuid.UUID `json:"account_id"`
-	ClientID           uuid.UUID `json:"client_id"`
-	PrincipalInitial   int64     `json:"principal_initial"`
-	MonthlyRate        float64   `json:"monthly_rate"`
-	NoticePeriodMonths int       `json:"notice_period_months"`
+func NewHandler(ledger *domain.LedgerService, investment *repository.InvestmentRepository, publisher rabbitmq.Publisher, db *sql.DB, cfg *rabbitmq.RabbitConfig) *Handler {
+	return &Handler{ledger: ledger, investment: investment, publisher: publisher, db: db, cfg: cfg}
 }
 
-type CreateInvestmentResponse struct {
-	Investment Investment `json:"investment"`
+func (h *Handler) worker() (*invworker.Worker, error) {
+	h.workerOnce.Do(func() {
+		h.invWorker, h.workerErr = invworker.NewWorker(h.db, h.publisher, h.cfg, database.New(h.db))
+	})
+	return h.invWorker, h.workerErr
 }
-
-type Investment struct {
-	ID                 uuid.UUID `json:"id"`
-	ClientID           uuid.UUID `json:"client_id"`
-	PrincipalInitial   int64     `json:"principal_initial"`
-	MonthlyRate        float64   `json:"monthly_rate"`
-	NextAccrualAt      string    `json:"next_accrual_at"`
-	NoticePeriodMonths int       `json:"notice_period_months"`
-}
-
-func NewHandler(ledger *domain.LedgerService, investment *repository.InvestmentRepository, publisher rabbitmq.Publisher, db *sql.DB) *Handler {
-	capitalAccID, err := investment.GetCapitalAccount(context.Background())
-	if err != nil {
-		log.Fatalf("Failed to get capital account: %v", err)
-	}
-	return &Handler{ledger: ledger, investment: investment, publisher: publisher, capitalAccID: *capitalAccID, db: db, outboxRepo: repository.NewOutboxRepository(db)}
+func (h *Handler) healthCheckHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status": "ok"}`))
 }
 
 func (h *Handler) getAccountHandler(w http.ResponseWriter, r *http.Request) {
@@ -69,21 +58,21 @@ func (h *Handler) getAccountHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Account not found", http.StatusNotFound)
 		return
 	}
-	balance, err := h.ledger.GetBalance(context.Background(), acc.ID)
+	balance, err := h.ledger.GetBalance(context.Background(), acc.Name)
 	if err != nil {
-		http.Error(w, "Failed to get account balance", http.StatusInternalServerError)
+		http.Error(w, "failed to get account balance", http.StatusInternalServerError)
 		return
 	}
 
 	response, err := json.Marshal(struct {
 		Account database.Account `json:"account"`
-		Balance float64          `json:"balance"`
+		Balance int64            `json:"balance"`
 	}{
 		Account: acc,
 		Balance: balance,
 	})
 	if err != nil {
-		http.Error(w, "Failed to marshal account", http.StatusInternalServerError)
+		http.Error(w, "failed to marshal account", http.StatusInternalServerError)
 		return
 	}
 
@@ -111,13 +100,13 @@ func (h *Handler) createAccountHandler(w http.ResponseWriter, r *http.Request) {
 		Type: req.Type,
 	})
 	if err != nil {
-		log.Printf("Failed to create account: %v\n", err)
+		log.Printf("failed to create account: %v\n", err)
 		return
 	}
 
 	response, err := json.Marshal(req)
 	if err != nil {
-		http.Error(w, "Failed to marshal account", http.StatusInternalServerError)
+		http.Error(w, "failed to marshal account", http.StatusInternalServerError)
 		return
 	}
 
@@ -159,8 +148,8 @@ func (h *Handler) transactionsHandler(w http.ResponseWriter, r *http.Request) {
 		Entries: entries,
 	})
 	if err != nil {
-		log.Printf("Failed to post transaction: %v\n", err)
-		http.Error(w, "Failed to post transaction", http.StatusInternalServerError)
+		log.Printf("failed to post transaction: %v\n", err)
+		http.Error(w, "failed to post transaction", http.StatusInternalServerError)
 		return
 	}
 
@@ -178,13 +167,13 @@ func (h *Handler) getTransactionsHandler(w http.ResponseWriter, r *http.Request)
 
 	transactions, err := h.ledger.GetAccountHistory(context.Background(), id)
 	if err != nil {
-		http.Error(w, "Failed to get transactions", http.StatusInternalServerError)
+		http.Error(w, "failed to get transactions", http.StatusInternalServerError)
 		return
 	}
 
 	response, err := json.Marshal(transactions)
 	if err != nil {
-		http.Error(w, "Failed to marshal transactions", http.StatusInternalServerError)
+		http.Error(w, "failed to marshal transactions", http.StatusInternalServerError)
 		return
 	}
 
@@ -194,98 +183,27 @@ func (h *Handler) getTransactionsHandler(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *Handler) createInvestmentHandler(w http.ResponseWriter, r *http.Request) {
-	type request struct {
-		AccountID          uuid.UUID `json:"account_id"`
-		ClientID           uuid.UUID `json:"client_id"`
-		PrincipalInitial   int64     `json:"principal_initial"`
-		MonthlyRate        float64   `json:"monthly_rate"`
-		NoticePeriodMonths int       `json:"notice_period_months"`
-	}
-	var req request
+	var req commands.ResolvePaymentPayload
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	log.Printf("Received create investment request: %+v\n", req)
-
-	inv, err := h.investment.CreateInvestment(context.Background(), database.Investment{
-		ClientID:         req.ClientID,
-		PrincipalInitial: req.PrincipalInitial,
-	})
+	worker, err := h.worker()
 	if err != nil {
-		log.Printf("Failed to create investment: %v\n", err)
-		http.Error(w, "Failed to create investment", http.StatusInternalServerError)
+		log.Printf("failed to create investment worker: %v\n", err)
+		http.Error(w, "failed to process investment", http.StatusInternalServerError)
 		return
 	}
-
-	// Create funding transaction
-	fundingTx := domain.Transaction{
-		Type: fmt.Sprintf("Investment_created_%s", inv.ID),
-		Entries: []domain.Entry{
-			{
-				AccountId: req.AccountID,
-				Amount:    req.PrincipalInitial,
-				Type:      domain.Debit,
-			},
-			{
-				AccountId: h.capitalAccID,
-				Amount:    req.PrincipalInitial,
-				Type:      domain.Credit,
-			},
-		},
-	}
-	err = h.ledger.PostTransaction(context.Background(), fundingTx)
+	err = worker.HandlePaymentEvent(r.Context(), req)
 	if err != nil {
-		log.Printf("Failed to post funding transaction: %v\n", err)
-		http.Error(w, "Failed to post funding transaction", http.StatusInternalServerError)
-		return
-	}
-	rate, err := strconv.ParseFloat(inv.MonthlyRate, 64)
-	if err != nil {
-		log.Printf("Failed to parse monthly rate: %v\n", err)
-		http.Error(w, "Failed to parse monthly rate", http.StatusInternalServerError)
-		return
-	}
-	response, err := json.Marshal(Investment{
-		ID:               inv.ID,
-		ClientID:         inv.ClientID,
-		PrincipalInitial: inv.PrincipalInitial,
-		NextAccrualAt:    inv.NextAccrualAt.Format("2006-01-02"),
-		MonthlyRate:      rate,
-	})
-	if err != nil {
-		http.Error(w, "Failed to marshal investment", http.StatusInternalServerError)
-		return
-	}
-
-	event := commands.InvestmentCreatedPayload{
-		Id:              inv.ID.String(),
-		ClientId:        inv.ClientID.String(),
-		Principal:       inv.PrincipalInitial,
-		Status:          inv.Status,
-		AccruedInterest: inv.AccruedInterest,
-		NextAccrualDate: inv.NextAccrualAt.Format("2006-01-02"),
-		MonthlyRate:     rate,
-	}
-	cmd, err := commands.NewCommand(commands.InvestmentCreated, event)
-	if err != nil {
-		log.Printf("Failed to create command: %v\n", err)
-		http.Error(w, "Failed to create command", http.StatusInternalServerError)
-		return
-	}
-	err = h.publisher.Publish("", string(commands.InvestmentCreated), false, false, amqp.Publishing{
-		ContentType: "application/json",
-		Body:        []byte(cmd.Payload),
-	})
-	if err != nil {
-		log.Printf("Failed to publish command: %v\n", err)
-		http.Error(w, "Failed to publish command", http.StatusInternalServerError)
+		log.Printf("failed to handle payment event: %v\n", err)
+		http.Error(w, "failed to create investment", http.StatusBadRequest)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	w.Write(response)
+	w.Write([]byte(`{"message": "investment created successfully"}`))
 }
 
 func (h *Handler) handleRequestWithdrawal(w http.ResponseWriter, r *http.Request) {
@@ -304,73 +222,20 @@ func (h *Handler) handleRequestWithdrawal(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Withdrawal amount must be greater than zero", http.StatusBadRequest)
 		return
 	}
-	inv, err := h.investment.GetInvestmentByID(context.Background(), req.InvestmentID)
+	worker, err := h.worker()
 	if err != nil {
-		log.Printf("Failed to get investment: %v\n", err)
-		http.Error(w, "Failed to get investment", http.StatusInternalServerError)
+		log.Printf("failed to create investment worker: %v\n", err)
+		http.Error(w, "failed to process withdrawal request", http.StatusInternalServerError)
 		return
 	}
-	if inv.PrincipalCurrent < req.Amount {
-		http.Error(w, "Withdrawal amount exceeds current principal", http.StatusBadRequest)
-		return
-	}
-	tx, err := h.db.BeginTx(r.Context(), nil)
+	err = worker.RequestWithdrawal(r.Context(), req.InvestmentID, req.Amount, 1)
 	if err != nil {
-		log.Printf("Failed to begin transaction: %v\n", err)
-		http.Error(w, "Failed to process withdrawal request", http.StatusInternalServerError)
-		return
-	}
-	defer tx.Rollback()
-
-	// Generate withdrawal request command with tx
-	withdrawal, err := h.investment.CreateInvestmentWithdrawal(context.Background(), database.WithdrawalsPayable{
-		InvestmentID:       req.InvestmentID,
-		Amount:             req.Amount,
-		RequestedAt:        time.Now(),
-		NoticePeriodMonths: 1,
-		Status:             "pending",
-	})
-	if err != nil {
-		log.Printf("Failed to create withdrawal request: %v\n", err)
-		http.Error(w, "Failed to create withdrawal request", http.StatusInternalServerError)
-		return
-	}
-	cmd := commands.InvestmentWithdrawalRequestedPayload{
-		InvestmentId: req.InvestmentID.String(),
-		WithdrawalId: withdrawal.ID.String(),
-		Amount:       req.Amount,
-		RequestedAt:  time.Now().String(),
-		EligibleAt:   time.Now().AddDate(0, 1, 0).String(),
-	}
-	command, err := commands.NewCommand(commands.InvestmentWithdrawalRequested, cmd)
-	if err != nil {
-		log.Printf("Failed to create command: %v\n", err)
-		http.Error(w, "Failed to create command", http.StatusInternalServerError)
-		return
-	}
-
-	// Create oubox message for withdrawal request command
-	outboxMsg := database.OutboxMessage{
-		AggregateID:   req.InvestmentID,
-		AggregateType: "withdrawal_request",
-		CommandType:   string(commands.InvestmentWithdrawalRequested),
-		Payload:       command.Payload,
-		Status:        "pending",
-	}
-
-	err = h.outboxRepo.CreateOutboxMessage(r.Context(), outboxMsg)
-	if err != nil {
-		log.Printf("Failed to create outbox message: %v\n", err)
-		http.Error(w, "Failed to create outbox message", http.StatusInternalServerError)
-		return
-	}
-	if err := tx.Commit(); err != nil {
-		log.Printf("Failed to commit transaction: %v\n", err)
-		http.Error(w, "Failed to process withdrawal request", http.StatusInternalServerError)
+		log.Printf("failed to process withdrawal request: %v\n", err)
+		http.Error(w, "failed to process withdrawal request", http.StatusBadRequest)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"message": "Withdrawal request created successfully"}`))
+	w.Write([]byte(`{"message": "withdrawal request created successfully"}`))
 }

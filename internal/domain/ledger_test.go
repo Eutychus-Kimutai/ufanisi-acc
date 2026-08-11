@@ -9,7 +9,7 @@ import (
 )
 
 func TestPostTransaction_UnbalancedReturnsError(t *testing.T) {
-	ledger := NewLedgerService(nil, nil)
+	ledger := NewLedgerService(nil, nil, nil)
 
 	err := ledger.PostTransaction(context.Background(), Transaction{
 		Type: "test",
@@ -20,4 +20,15 @@ func TestPostTransaction_UnbalancedReturnsError(t *testing.T) {
 	})
 
 	require.ErrorIs(t, err, ErrUnbalancedTransaction)
+
+	err = ledger.PostTransaction(context.Background(), Transaction{
+		Type: "test",
+		Entries: []Entry{
+			{AccountId: uuid.New(), Type: Debit, Amount: 100},
+			{AccountId: uuid.New(), Type: "invalid", Amount: 100},
+		},
+	})
+
+	require.Error(t, err)
+
 }

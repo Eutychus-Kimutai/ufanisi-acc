@@ -13,7 +13,7 @@ import (
 
 const createAccount = `-- name: CreateAccount :one
 INSERT INTO accounts (id, name, type) VALUES ($1, $2, $3)
-RETURNING id, name, type, created_at, updated_at
+RETURNING id, name, type, client_id, created_at, updated_at
 `
 
 type CreateAccountParams struct {
@@ -29,6 +29,7 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		&i.ID,
 		&i.Name,
 		&i.Type,
+		&i.ClientID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -36,18 +37,62 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 }
 
 const getAccount = `-- name: GetAccount :one
-SELECT id, name, type, created_at, updated_at FROM accounts WHERE id = $1
+SELECT id, name, type, client_id, created_at, updated_at FROM accounts WHERE name = $1
 `
 
-func (q *Queries) GetAccount(ctx context.Context, id uuid.UUID) (Account, error) {
-	row := q.db.QueryRowContext(ctx, getAccount, id)
+func (q *Queries) GetAccount(ctx context.Context, name string) (Account, error) {
+	row := q.db.QueryRowContext(ctx, getAccount, name)
 	var i Account
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.Type,
+		&i.ClientID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getAccountByID = `-- name: GetAccountByID :one
+SELECT id, name, type, client_id, created_at, updated_at FROM accounts WHERE id = $1
+`
+
+func (q *Queries) GetAccountByID(ctx context.Context, id uuid.UUID) (Account, error) {
+	row := q.db.QueryRowContext(ctx, getAccountByID, id)
+	var i Account
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Type,
+		&i.ClientID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getAccountDetails = `-- name: GetAccountDetails :one
+SELECT a.id, a.name, a.type, c.id AS client_id FROM accounts a
+JOIN clients c ON a.client_id = c.id
+WHERE a.name = $1
+`
+
+type GetAccountDetailsRow struct {
+	ID       uuid.UUID
+	Name     string
+	Type     string
+	ClientID uuid.UUID
+}
+
+func (q *Queries) GetAccountDetails(ctx context.Context, name string) (GetAccountDetailsRow, error) {
+	row := q.db.QueryRowContext(ctx, getAccountDetails, name)
+	var i GetAccountDetailsRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Type,
+		&i.ClientID,
 	)
 	return i, err
 }
@@ -58,17 +103,6 @@ SELECT id FROM accounts WHERE name = 'Capital Account' LIMIT 1
 
 func (q *Queries) GetCapitalAccount(ctx context.Context) (uuid.UUID, error) {
 	row := q.db.QueryRowContext(ctx, getCapitalAccount)
-	var id uuid.UUID
-	err := row.Scan(&id)
-	return id, err
-}
-
-const getInvestorFundsAccount = `-- name: GetInvestorFundsAccount :one
-SELECT id FROM accounts WHERE name = 'Investor Funds Account' LIMIT 1
-`
-
-func (q *Queries) GetInvestorFundsAccount(ctx context.Context) (uuid.UUID, error) {
-	row := q.db.QueryRowContext(ctx, getInvestorFundsAccount)
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err

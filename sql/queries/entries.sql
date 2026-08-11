@@ -8,3 +8,6 @@ RETURNING *;
 
 -- name: GetEntries :many
 SELECT * FROM entries WHERE account_id = $1;
+
+-- name: GetAccountBalance :one
+SELECT SUM(amount) AS balance FROM entries WHERE type = $1;

@@ -9,10 +9,11 @@ import (
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/repository"
 )
 
-func NewRouter(db *sql.DB, ledger *domain.LedgerService, investment *repository.InvestmentRepository, publisher rabbitmq.Publisher) *http.ServeMux {
+func NewRouter(db *sql.DB, ledger *domain.LedgerService, investment *repository.InvestmentRepository, publisher rabbitmq.Publisher, cfg *rabbitmq.RabbitConfig) *http.ServeMux {
 	router := http.NewServeMux()
 
-	handler := NewHandler(ledger, investment, publisher, db)
+	handler := NewHandler(ledger, investment, publisher, db, cfg)
+	router.HandleFunc("GET /health", handler.healthCheckHandler)
 	router.HandleFunc("GET /accounts/{id}/transactions", handler.getTransactionsHandler)
 	router.HandleFunc("GET /accounts/{id}", handler.getAccountHandler)
 	router.HandleFunc("POST /accounts", handler.createAccountHandler)
