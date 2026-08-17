@@ -347,6 +347,41 @@ func (q *Queries) TryFailPayment(ctx context.Context, idempotencyKey string) (Pa
 	return i, err
 }
 
+const tryUnresolvePayment = `-- name: TryUnresolvePayment :one
+UPDATE payments
+SET STATUS = 'unresolved',
+updated_at = NOW()
+WHERE idempotency_key = $1
+AND (
+	status = 'resolving' 
+)
+Returning id, idempotency_key, external_id, amount, payment_type, phone_number, client_ref, payment_ref, destination, status, resolved_type, resolving_started_at, raw_event, created_at, resolved_at, updated_at
+`
+
+func (q *Queries) TryUnresolvePayment(ctx context.Context, idempotencyKey string) (Payment, error) {
+	row := q.db.QueryRowContext(ctx, tryUnresolvePayment, idempotencyKey)
+	var i Payment
+	err := row.Scan(
+		&i.ID,
+		&i.IdempotencyKey,
+		&i.ExternalID,
+		&i.Amount,
+		&i.PaymentType,
+		&i.PhoneNumber,
+		&i.ClientRef,
+		&i.PaymentRef,
+		&i.Destination,
+		&i.Status,
+		&i.ResolvedType,
+		&i.ResolvingStartedAt,
+		&i.RawEvent,
+		&i.CreatedAt,
+		&i.ResolvedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updatePaymentStatus = `-- name: UpdatePaymentStatus :exec
 UPDATE payments
 SET status = $2, updated_at = NOW()

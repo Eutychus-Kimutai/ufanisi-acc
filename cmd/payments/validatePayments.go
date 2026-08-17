@@ -85,6 +85,7 @@ func (h *Handler) HandlePayment(event payment.PaymentEvent) error {
 			if err != nil {
 				return fmt.Errorf("failed to publish payment event: %v", err)
 			}
+			return nil
 		} else {
 
 			return fmt.Errorf("failed to get payment reference: %v", err)

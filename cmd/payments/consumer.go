@@ -56,6 +56,7 @@ func Consumer(ctx context.Context, ch *amqp.Channel, queueName string, handler *
 					continue
 				}
 				log.Printf("Payment updated to completed for external ID: %s", payload.IdempotencyKey)
+				msg.Ack(false)
 
 			}
 
