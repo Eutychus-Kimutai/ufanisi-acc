@@ -91,6 +91,16 @@ type OutboxMessage struct {
 	UpdatedAt     time.Time
 }
 
+type Overpayment struct {
+	ID         uuid.UUID
+	LoanID     uuid.UUID
+	ExternalID string
+	Amount     int64
+	Status     string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
 type Payment struct {
 	ID                 uuid.UUID
 	IdempotencyKey     string

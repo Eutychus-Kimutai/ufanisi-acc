@@ -153,3 +153,10 @@ func (r *PaymentsRepository) TryFailPayment(ctx context.Context, idempotencyKey 
 	}
 	return payments, nil
 }
+func (r *PaymentsRepository) TryUnresolvePayment(ctx context.Context, idempotencyKey string) (database.Payment, error) {
+	payments, err := r.db.TryUnresolvePayment(ctx, idempotencyKey)
+	if err != nil {
+		return database.Payment{}, err
+	}
+	return payments, nil
+}

@@ -42,20 +42,36 @@ func Consumer(ctx context.Context, ch *amqp.Channel, queueName string, handler *
 					continue
 				}
 				var payload commands.PaymentResolvedPayload
-				err = json.Unmarshal(event.Payload, &payload)
-				if err != nil {
-					log.Printf("Failed to unmarshal payload: %v", err)
-					msg.Nack(false, false)
-					continue
+				var unresolvedPayload commands.UnresolvedPaymentPayload
+				if event.Type == commands.PaymentResolved {
+					err = json.Unmarshal(event.Payload, &payload)
+					if err != nil {
+						log.Printf("Failed to unmarshal payload: %v", err)
+						msg.Nack(false, false)
+						continue
+					}
+					_, err = handler.paymentRepo.TryCompletePayment(ctx, payload.IdempotencyKey)
+					if err != nil {
+						log.Printf("Failed to update payment status: %v", err)
+						msg.Nack(false, true)
+						continue
+					}
+				} else if event.Type == commands.UnresolvedPayment {
+					err = json.Unmarshal(event.Payload, &unresolvedPayload)
+					if err != nil {
+						log.Printf("Failed to unmarshal payload: %v", err)
+						msg.Nack(false, false)
+						continue
+					}
+					_, err = handler.paymentRepo.TryUnresolvePayment(ctx, unresolvedPayload.ExternalId)
+					if err != nil {
+						log.Printf("Failed to update payment status: %v", err)
+						msg.Nack(false, true)
+						continue
+					}
 				}
-				log.Printf("Received payment event: %+v", payload)
-				_, err = handler.paymentRepo.TryCompletePayment(ctx, payload.IdempotencyKey)
-				if err != nil {
-					log.Printf("Failed to update payment status: %v", err)
-					msg.Nack(false, true)
-					continue
-				}
-				log.Printf("Payment updated to completed for external ID: %s", payload.IdempotencyKey)
+
+				msg.Ack(false)
 
 			}
 

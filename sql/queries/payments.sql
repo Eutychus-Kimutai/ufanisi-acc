@@ -66,3 +66,13 @@ AND (
 	)
 RETURNING *;
 
+-- name: TryUnresolvePayment :one
+UPDATE payments
+SET STATUS = 'unresolved',
+updated_at = NOW()
+WHERE idempotency_key = $1
+AND (
+	status = 'resolving' 
+)
+Returning *;
+

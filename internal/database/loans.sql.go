@@ -11,6 +11,47 @@ import (
 	"github.com/google/uuid"
 )
 
+const createLoan = `-- name: CreateLoan :one
+INSERT INTO loans (client_id, loan_number, reference, product_type, principal_amount, outstanding_amount, status,
+    created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, 'active',NOW(), NOW())
+RETURNING id, client_id, reference, loan_number, product_type, status, principal_amount, outstanding_amount, created_at, updated_at
+`
+
+type CreateLoanParams struct {
+	ClientID          uuid.UUID
+	LoanNumber        string
+	Reference         string
+	ProductType       string
+	PrincipalAmount   int64
+	OutstandingAmount int64
+}
+
+func (q *Queries) CreateLoan(ctx context.Context, arg CreateLoanParams) (Loan, error) {
+	row := q.db.QueryRowContext(ctx, createLoan,
+		arg.ClientID,
+		arg.LoanNumber,
+		arg.Reference,
+		arg.ProductType,
+		arg.PrincipalAmount,
+		arg.OutstandingAmount,
+	)
+	var i Loan
+	err := row.Scan(
+		&i.ID,
+		&i.ClientID,
+		&i.Reference,
+		&i.LoanNumber,
+		&i.ProductType,
+		&i.Status,
+		&i.PrincipalAmount,
+		&i.OutstandingAmount,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getLoanByID = `-- name: GetLoanByID :one
 SELECT id, client_id, reference, loan_number, product_type, status, principal_amount, outstanding_amount, created_at, updated_at
 FROM loans WHERE id = $1
@@ -119,7 +160,7 @@ func (q *Queries) GetLoansByClientID(ctx context.Context, clientID uuid.UUID) ([
 }
 
 const updateLoanOutstandingAmount = `-- name: UpdateLoanOutstandingAmount :exec
-UPDATE loans SET outstanding_amount = outstanding_amount - $1, updated_at = NOW() WHERE id = $2
+UPDATE loans SET outstanding_amount = $1, updated_at = NOW() WHERE id = $2
 `
 
 type UpdateLoanOutstandingAmountParams struct {
@@ -129,5 +170,19 @@ type UpdateLoanOutstandingAmountParams struct {
 
 func (q *Queries) UpdateLoanOutstandingAmount(ctx context.Context, arg UpdateLoanOutstandingAmountParams) error {
 	_, err := q.db.ExecContext(ctx, updateLoanOutstandingAmount, arg.OutstandingAmount, arg.ID)
+	return err
+}
+
+const updateLoanStatus = `-- name: UpdateLoanStatus :exec
+UPDATE loans SET status = $1, updated_at = NOW() WHERE id = $2
+`
+
+type UpdateLoanStatusParams struct {
+	Status string
+	ID     uuid.UUID
+}
+
+func (q *Queries) UpdateLoanStatus(ctx context.Context, arg UpdateLoanStatusParams) error {
+	_, err := q.db.ExecContext(ctx, updateLoanStatus, arg.Status, arg.ID)
 	return err
 }
