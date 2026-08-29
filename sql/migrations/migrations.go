@@ -166,6 +166,15 @@ func Migrate(ctx context.Context, db *sql.DB) error {
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );`,
+		`CREATE TABLE IF NOT EXISTS overpayments (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			loan_id UUID NOT NULL REFERENCES loans(id) ON DELETE CASCADE,
+			external_id TEXT NOT NULL UNIQUE,
+			amount BIGINT NOT NULL CHECK (amount > 0),
+			status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'applied', 'refunded')),
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);`,
 
 		`CREATE INDEX IF NOT EXISTS idx_loans_client_status ON loans(client_id, status);`,
 
