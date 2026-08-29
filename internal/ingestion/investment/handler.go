@@ -139,7 +139,7 @@ func (w *Worker) resolveInvestment(ctx context.Context, event commands.ResolvePa
 	if err != nil {
 		return nil, fmt.Errorf("failed to update investment: %v", err)
 	}
-	log.Printf("Updated existing investment: %+v\n", event)
+	log.Printf("updated existing investment: %+v\n", event)
 	tx := domain.Transaction{
 		Id:   uuid.New(),
 		Type: "investment_deposit",

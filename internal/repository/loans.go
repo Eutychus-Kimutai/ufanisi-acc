@@ -15,6 +15,10 @@ func NewLoanRepository(db *sql.DB) *LoanRepository {
 
 	return &LoanRepository{db: database.New(db)}
 }
+func (r *LoanRepository) WithTx(tx *sql.Tx) *LoanRepository {
+	return &LoanRepository{db: database.New(tx)}
+}
+
 func (r *LoanRepository) CreateLoan(ctx context.Context, loan database.CreateLoanParams) (database.Loan, error) {
 	createdLoan, err := r.db.CreateLoan(ctx, loan)
 	if err != nil {
@@ -74,8 +78,8 @@ func (r *LoanRepository) CreateOverpayment(ctx context.Context, overpayment data
 	return createdOverpayment, nil
 }
 
-func (r *LoanRepository) GetOverpaymentByLoanID(ctx context.Context, loanID uuid.UUID) (*database.Overpayment, error) {
-	overpayments, err := r.db.GetOverpaymentByLoanID(ctx, loanID)
+func (r *LoanRepository) GetOverpaymentByExternalId(ctx context.Context, externalID string) (*database.Overpayment, error) {
+	overpayments, err := r.db.GetOverpaymentByExternalID(ctx, externalID)
 	if err != nil {
 		return nil, err
 	}
@@ -86,6 +90,16 @@ func (r *LoanRepository) UpdateOverpaymentAmount(ctx context.Context, id uuid.UU
 	err := r.db.UpdateOverpaymentAmount(ctx, database.UpdateOverpaymentAmountParams{
 		ID:     id,
 		Amount: amount,
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func (r *LoanRepository) UpdateLoanStatus(ctx context.Context, id uuid.UUID, status string) error {
+	err := r.db.UpdateLoanStatus(ctx, database.UpdateLoanStatusParams{
+		ID:     id,
+		Status: status,
 	})
 	if err != nil {
 		return err

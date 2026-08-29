@@ -16,8 +16,8 @@ INSERT INTO overpayments (
 )
 RETURNING *;
 
--- name: GetOverpaymentByLoanID :one
-SELECT * FROM overpayments WHERE loan_id = $1;
+-- name: GetOverpaymentByExternalID :one
+SELECT * FROM overpayments WHERE external_id = $1;
 
 -- name: UpdateOverpaymentStatus :exec
 UPDATE overpayments SET status = $1, updated_at = NOW() WHERE id = $2; 

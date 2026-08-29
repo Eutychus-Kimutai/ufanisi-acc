@@ -2,7 +2,6 @@ package loan
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"log"
 
@@ -51,30 +50,8 @@ func StartConsumer(ctx context.Context, ch *amqp.Channel, queueName string, work
 					continue
 				}
 
-				_, err = worker.paymentRepo.TryClaimPayment(ctx, payload.ExternalId)
+				loanHandlingErr := worker.HandlePaymentEvent(ctx, payload)
 				if err != nil {
-					log.Printf("Failed to get payment processing status: %v", err)
-					if err == sql.ErrNoRows {
-						log.Printf("Payment with external ID %s was not claimed; already processing or not eligible", payload.ExternalId)
-						msg.Ack(false)
-						continue
-					}
-					msg.Nack(false, true)
-					continue
-				}
-
-				err = worker.HandlePaymentEvent(ctx, payload)
-				if err != nil {
-
-					if err != ErrLoanNotFound {
-						if _, failErr := worker.paymentRepo.TryFailPayment(ctx, payload.ExternalId); failErr != nil {
-							log.Printf("Failed to update payment status to completed: %v", failErr)
-						}
-					}
-
-					if _, unresolvedErr := worker.paymentRepo.TryUnresolvePayment(ctx, payload.ExternalId); unresolvedErr != nil {
-						log.Printf("Failed to update payment status to unresolved: %v", unresolvedErr)
-					}
 					cmd := commands.UnresolvedPaymentPayload{
 						Amount:     payload.Amount,
 						ClientRef:  payload.ClientRef,
@@ -88,6 +65,7 @@ func StartConsumer(ctx context.Context, ch *amqp.Channel, queueName string, work
 					if err != nil {
 						log.Printf("failed to create unresolved payment command: %v", err)
 					}
+					log.Printf("Publishing unresolved payment command for ExternalId: %s due to error: %v", payload.ExternalId, loanHandlingErr)
 					err = rabbitmq.PublishCommand(
 						worker.channel,
 						worker.cfg.Queues.Unresolved,
@@ -97,9 +75,9 @@ func StartConsumer(ctx context.Context, ch *amqp.Channel, queueName string, work
 						log.Printf("failed to publish unresolved payment command: %v", err)
 					}
 					log.Printf("Published unresolved payment command for ExternalId: %s", payload.ExternalId)
-
 					msg.Nack(false, false)
 					continue
+
 				}
 
 				msg.Ack(false)

@@ -12,7 +12,7 @@ import (
 )
 
 const createLoan = `-- name: CreateLoan :one
-INSERT INTO loans (client_id, loan_number, reference,product_type, principal_amount, outstanding_amount, status,
+INSERT INTO loans (client_id, loan_number, reference, product_type, principal_amount, outstanding_amount, status,
     created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, 'active',NOW(), NOW())
 RETURNING id, client_id, reference, loan_number, product_type, status, principal_amount, outstanding_amount, created_at, updated_at
@@ -170,5 +170,19 @@ type UpdateLoanOutstandingAmountParams struct {
 
 func (q *Queries) UpdateLoanOutstandingAmount(ctx context.Context, arg UpdateLoanOutstandingAmountParams) error {
 	_, err := q.db.ExecContext(ctx, updateLoanOutstandingAmount, arg.OutstandingAmount, arg.ID)
+	return err
+}
+
+const updateLoanStatus = `-- name: UpdateLoanStatus :exec
+UPDATE loans SET status = $1, updated_at = NOW() WHERE id = $2
+`
+
+type UpdateLoanStatusParams struct {
+	Status string
+	ID     uuid.UUID
+}
+
+func (q *Queries) UpdateLoanStatus(ctx context.Context, arg UpdateLoanStatusParams) error {
+	_, err := q.db.ExecContext(ctx, updateLoanStatus, arg.Status, arg.ID)
 	return err
 }

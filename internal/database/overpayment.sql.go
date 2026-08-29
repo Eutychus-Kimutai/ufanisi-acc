@@ -51,12 +51,12 @@ func (q *Queries) CreateOverpayment(ctx context.Context, arg CreateOverpaymentPa
 	return i, err
 }
 
-const getOverpaymentByLoanID = `-- name: GetOverpaymentByLoanID :one
-SELECT id, loan_id, external_id, amount, status, created_at, updated_at FROM overpayments WHERE loan_id = $1
+const getOverpaymentByExternalID = `-- name: GetOverpaymentByExternalID :one
+SELECT id, loan_id, external_id, amount, status, created_at, updated_at FROM overpayments WHERE external_id = $1
 `
 
-func (q *Queries) GetOverpaymentByLoanID(ctx context.Context, loanID uuid.UUID) (Overpayment, error) {
-	row := q.db.QueryRowContext(ctx, getOverpaymentByLoanID, loanID)
+func (q *Queries) GetOverpaymentByExternalID(ctx context.Context, externalID string) (Overpayment, error) {
+	row := q.db.QueryRowContext(ctx, getOverpaymentByExternalID, externalID)
 	var i Overpayment
 	err := row.Scan(
 		&i.ID,

@@ -8,10 +8,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"syscall"
+	"time"
 
 	httphandler "github.com/Eutychus-Kimutai/ufanisi-acc/cmd/httpHandler"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/ingestion/loan"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/rabbitmq"
+	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/repository"
 )
 
 func main() {
@@ -57,11 +60,66 @@ func main() {
 	worker, err := loan.NewWorker(db, ch, cfg.Queues.Loan, cfg)
 	if err != nil {
 		log.Fatalf("Failed to create worker: %v", err)
+
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	dispatcherChannel, err := rabbitmq.NewChannel(conn)
+	if err != nil {
+		log.Fatalf("Failed to open dispatcher channel: %v", err)
+	}
+	defer dispatcherChannel.Close()
+	outboxRepo := repository.NewOutboxRepository(db)
+
+	dispatcher := loan.NewOutboxDispatcher(outboxRepo, dispatcherChannel, cfg)
+	purgeOnce := func(runCtx context.Context) {
+		deletedCount, purgeErr := outboxRepo.PurgeOldMessages(runCtx, 10, 100)
+		if purgeErr != nil {
+			log.Printf("Failed to purge old messages: %v", purgeErr)
+		} else {
+			log.Printf("Purged %d old messages from the outbox", deletedCount)
+		}
 	}
 
+	go func() {
+		purgeOnce(ctx)
+		log.Println("Starting outbox dispatcher...")
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				freshCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				purgeOnce(freshCtx)
+
+				cancel()
+				return
+
+			case <-ticker.C:
+				purgeOnce(ctx)
+			}
+		}
+	}()
+
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				log.Println("Shutting down outbox dispatcher...")
+				return
+			case <-ticker.C:
+				err := dispatcher.DispatchOnce(ctx)
+				if err != nil {
+					log.Printf("Error dispatching messages: %v", err)
+				}
+			}
+		}
+	}()
+
 	HTTPHandler := httphandler.NewHandler(worker)
-	notifyCtx := make(chan os.Signal, 1)
-	signal.Notify(notifyCtx, os.Interrupt)
 
 	go func() {
 		log.Println("Starting HTTP server on :8081")
@@ -76,5 +134,5 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to start consumer: %v", err)
 	}
-	<-notifyCtx
+	<-ctx.Done()
 }

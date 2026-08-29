@@ -58,6 +58,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to start consumer: %v", err)
 	}
+	err = Consumer(context.Background(), ch, cfg.Queues.Unresolved, handler)
+	if err != nil {
+		log.Fatalf("Failed to start consumer: %v", err)
+	}
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {

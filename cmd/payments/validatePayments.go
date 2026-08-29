@@ -10,7 +10,6 @@ import (
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/payment"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/rabbitmq"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/repository"
-	"log"
 )
 
 type Handler struct {
@@ -40,6 +39,9 @@ func (h *Handler) HandlePayment(event payment.PaymentEvent) error {
 	if event.Amount <= 0 {
 		return errors.New("invalid payment amount")
 	}
+	if event.ExternalID == "" {
+		return errors.New("missing external ID")
+	}
 
 	_, err := h.paymentRepo.GetPaymentByIdempotencyKey(ctx, event.ExternalID)
 	if err == nil {
@@ -61,7 +63,6 @@ func (h *Handler) HandlePayment(event payment.PaymentEvent) error {
 	if err != nil {
 		return fmt.Errorf("failed to create payment: %v", err)
 	}
-	log.Printf("Payment created:  %+v", pmt)
 
 	reference, err := h.paymentRepo.GetPaymentReference(ctx, event.PaymentReference)
 	if err != nil {
@@ -119,6 +120,10 @@ func (h *Handler) HandlePayment(event payment.PaymentEvent) error {
 	err = rabbitmq.PublishCommand(h.publisher, queueName, resolutionCmd)
 	if err != nil {
 		return fmt.Errorf("failed to publish resolution command: %v", err)
+	}
+	err = h.paymentRepo.UpdatePaymentStatus(ctx, "resolving", pmt.ID)
+	if err != nil {
+		return fmt.Errorf("failed to update payment status: %v", err)
 	}
 
 	return nil

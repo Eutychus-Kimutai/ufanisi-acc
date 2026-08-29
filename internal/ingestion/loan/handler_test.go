@@ -78,6 +78,8 @@ func TestWorker_HandlePaymentEvent(t *testing.T) {
 			require.NoError(t, err)
 			_, err = db.ExecContext(context.Background(), "DELETE FROM clients WHERE id = $1", clientID)
 			require.NoError(t, err)
+			_, err = db.ExecContext(context.Background(), "DELETE FROM accounts WHERE id = $1", accountID)
+			require.NoError(t, err)
 
 		}
 
@@ -116,20 +118,24 @@ func TestWorker_HandlePaymentEvent(t *testing.T) {
 		require.NoError(t, err)
 
 		err = worker.HandlePaymentEvent(context.Background(), event)
-		require.Error(t, err)
+		require.NoError(t, err)
+		loan, err := worker.loanRepo.GetLoanByReference(context.Background(), event.PaymentRef)
+		require.NoError(t, err)
+		require.Equal(t, "paid_off", loan.Status)
+
 	})
 
 	t.Run("Test overpayment", func(t *testing.T) {
-		_, worker, event, loanId, cleanup := setup(t)
+		_, worker, event, _, cleanup := setup(t)
 		t.Cleanup(cleanup)
 		event.Amount = 15000
 		err := worker.HandlePaymentEvent(context.Background(), event)
 		require.NoError(t, err)
 
-		loan, err := worker.loanRepo.GetOverpaymentByLoanID(context.Background(), loanId)
+		loan, err := worker.loanRepo.GetLoanByReference(context.Background(), event.PaymentRef)
 		require.NoError(t, err)
 		require.NotNil(t, loan)
-		require.Equal(t, int64(5000), loan.Amount)
+		require.Equal(t, int64(0), loan.OutstandingAmount)
 
 	})
 
