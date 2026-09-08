@@ -25,6 +25,9 @@ func NewRepository(db *sql.DB) *LedgerRepository {
 		db: database.New(db),
 	}
 }
+func (l *LedgerRepository) WithTx(tx *sql.Tx) *LedgerRepository {
+	return &LedgerRepository{db: l.db.WithTx(tx)}
+}
 
 func (l *LedgerRepository) CreateAccount(ctx context.Context, account database.Account) error {
 	_, err := l.db.CreateAccount(ctx, database.CreateAccountParams{
@@ -147,6 +150,7 @@ func (l *LedgerRepository) CreateEntryWithTx(ctx context.Context, tx *sql.Tx, en
 		ID:            entry.ID,
 		AccountID:     entry.AccountID,
 		TransactionID: entry.TransactionID,
+		ExternalID:    entry.ExternalID,
 		Amount:        entry.Amount,
 		Type:          entry.Type,
 	})
@@ -159,10 +163,11 @@ func (l *LedgerRepository) CreateEntryWithTx(ctx context.Context, tx *sql.Tx, en
 func (l *LedgerRepository) CreateTransactionWithTx(ctx context.Context, tx *sql.Tx, transaction database.Transaction) error {
 	qtx := l.db.WithTx(tx)
 	_, err := qtx.CreateTransaction(ctx, database.CreateTransactionParams{
-		ID:        transaction.ID,
-		Type:      transaction.Type,
-		CreatedAt: transaction.CreatedAt,
-		UpdatedAt: time.Now(),
+		ID:         transaction.ID,
+		Type:       transaction.Type,
+		CreatedAt:  transaction.CreatedAt,
+		ExternalID: transaction.ExternalID,
+		UpdatedAt:  time.Now(),
 	})
 	if err != nil {
 		return err

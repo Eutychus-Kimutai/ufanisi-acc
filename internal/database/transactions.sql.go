@@ -7,27 +7,30 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
 )
 
 const createTransaction = `-- name: CreateTransaction :one
-INSERT INTO transactions (id, type, created_at, updated_at) VALUES ($1, $2, $3, $4)
-RETURNING id, type, created_at, updated_at
+INSERT INTO transactions (id, type, external_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)
+RETURNING id, type, external_id, created_at, updated_at
 `
 
 type CreateTransactionParams struct {
-	ID        uuid.UUID
-	Type      string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID         uuid.UUID
+	Type       string
+	ExternalID sql.NullString
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionParams) (Transaction, error) {
 	row := q.db.QueryRowContext(ctx, createTransaction,
 		arg.ID,
 		arg.Type,
+		arg.ExternalID,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
@@ -35,6 +38,7 @@ func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionPa
 	err := row.Scan(
 		&i.ID,
 		&i.Type,
+		&i.ExternalID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

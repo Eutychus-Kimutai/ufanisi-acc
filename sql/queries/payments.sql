@@ -37,7 +37,7 @@ SET STATUS = 'resolving',
 resolving_started_at = NOW(), updated_at = NOW()
 WHERE idempotency_key = $1
 AND (
-	status = 'received'
+	status = 'resolving'
 	OR (
 		status = 'resolving' AND
 		resolving_started_at  <= NOW() - interval '20 seconds'

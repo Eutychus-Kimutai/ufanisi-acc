@@ -17,12 +17,11 @@ type Client struct {
 }
 
 func NewClientRepository(db *database.Queries) *ClientRepository {
-	return &ClientRepository{
-		db: db,
-	}
+	return &ClientRepository{db: db}
 }
 
 func (r *ClientRepository) GetClientByID(ctx context.Context, clientID uuid.UUID) (database.Client, error) {
+
 	client, err := r.db.GetClientByID(ctx, clientID)
 	if err != nil {
 		return database.Client{}, err

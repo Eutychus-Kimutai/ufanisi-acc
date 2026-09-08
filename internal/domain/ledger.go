@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/database"
@@ -28,6 +29,12 @@ type LedgerService struct {
 func NewLedgerService(db *sql.DB, ledgerRepo *repository.LedgerRepository, clientRepo *repository.ClientRepository) *LedgerService {
 	return &LedgerService{db: db, ledgerRepo: ledgerRepo, clientRepo: clientRepo, accountRepo: repository.NewAccountsRepository(db)}
 }
+func (s *LedgerService) WithTx(tx *sql.Tx) *LedgerService {
+	return &LedgerService{
+		db:         s.db,
+		ledgerRepo: s.ledgerRepo.WithTx(tx),
+	}
+}
 
 func (s *LedgerService) CreateAccount(ctx context.Context, account database.Account) error {
 	err := s.ledgerRepo.CreateAccount(ctx, account)
@@ -50,7 +57,7 @@ func (s *LedgerService) PostTransaction(ctx context.Context, transaction Transac
 		case Credit:
 			totalCredit += entry.Amount
 		default:
-			return fmt.Errorf("transaction enytries not balanced: %s", entry.Type)
+			return fmt.Errorf("transaction entries not balanced: %s", entry.Type)
 		}
 		if entry.Amount <= 0 {
 			return fmt.Errorf("entry amount must be greater than zero")
@@ -73,20 +80,22 @@ func (s *LedgerService) PostTransaction(ctx context.Context, transaction Transac
 	createdAt := time.Now()
 	// Create transaction
 	err = s.ledgerRepo.CreateTransactionWithTx(ctx, tx, database.Transaction{
-		ID:        transactionId,
-		CreatedAt: createdAt,
-		UpdatedAt: createdAt,
-		Type:      transaction.Type,
+		ID:         transactionId,
+		CreatedAt:  createdAt,
+		UpdatedAt:  createdAt,
+		ExternalID: sql.NullString{String: transaction.ExternalId, Valid: true},
+		Type:       transaction.Type,
 	})
 	if err != nil {
 		return fmt.Errorf("error at transaction creation: %v", err)
 	}
 	// Verify accounts exist
 	for _, entry := range transaction.Entries {
-		_, err := s.ledgerRepo.GetAccountByID(ctx, entry.AccountId)
+		a, err := s.ledgerRepo.GetAccountByID(ctx, entry.AccountId)
 		if err != nil {
 			return fmt.Errorf("error at account verification: %v", err)
 		}
+		log.Printf("account verified: %s, type: %s", a.Name, a.Type)
 	}
 	// Create entries
 	for _, entry := range transaction.Entries {
@@ -94,6 +103,7 @@ func (s *LedgerService) PostTransaction(ctx context.Context, transaction Transac
 			ID:            uuid.New(),
 			AccountID:     entry.AccountId,
 			TransactionID: transactionId,
+			ExternalID:    entry.ExternalId,
 			Amount:        entry.Amount,
 			Type:          string(entry.Type),
 			CreatedAt:     createdAt,

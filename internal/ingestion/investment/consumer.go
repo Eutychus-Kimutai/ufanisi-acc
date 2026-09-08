@@ -50,7 +50,7 @@ func StartConsumer(ctx context.Context, ch *amqp.Channel, queueName string, work
 					continue
 				}
 				log.Printf("Received payment event: %+v", payload)
-				p, err := worker.paymentRepo.TryClaimPayment(ctx, payload.ExternalId)
+				_, err = worker.paymentRepo.TryClaimPayment(ctx, payload.ExternalId)
 				if err != nil {
 					log.Printf("Failed to get payment processing status: %v", err)
 					if err == sql.ErrNoRows {
@@ -61,7 +61,6 @@ func StartConsumer(ctx context.Context, ch *amqp.Channel, queueName string, work
 					msg.Nack(false, true)
 					continue
 				}
-				log.Printf("Payment updated to processing: %+v", p)
 
 				err = worker.HandlePaymentEvent(ctx, payload)
 				if err != nil {

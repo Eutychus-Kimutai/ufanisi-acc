@@ -34,6 +34,7 @@ func main() {
 	if err = db.PingContext(context.Background()); err != nil {
 		log.Fatalf("Error connecting to db: %s", err)
 	}
+	log.Println("Connected to the database successfully")
 	defer db.Close()
 
 	// Connect to RabbitMQ

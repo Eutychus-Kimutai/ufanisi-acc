@@ -33,6 +33,7 @@ type Entry struct {
 	ID            uuid.UUID
 	AccountID     uuid.UUID
 	TransactionID uuid.UUID
+	ExternalID    string
 	Amount        int64
 	Type          string
 	CreatedAt     time.Time
@@ -129,10 +130,11 @@ type PaymentReference struct {
 }
 
 type Transaction struct {
-	ID        uuid.UUID
-	Type      string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID         uuid.UUID
+	Type       string
+	ExternalID sql.NullString
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 type UnresolvedPayment struct {

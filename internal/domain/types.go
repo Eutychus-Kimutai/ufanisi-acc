@@ -14,15 +14,17 @@ type Account struct {
 }
 
 type Transaction struct {
-	Id        uuid.UUID
-	CreatedAt time.Time
-	Type      string
-	Entries   []Entry
+	Id         uuid.UUID
+	CreatedAt  time.Time
+	Type       string
+	ExternalId string
+	Entries    []Entry
 }
 
 type Entry struct {
 	TransactionId uuid.UUID
 	AccountId     uuid.UUID
+	ExternalId    string
 	Amount        int64
 	Type          EntryType
 }

@@ -13,17 +13,18 @@ import (
 
 const createEntry = `-- name: CreateEntry :one
 INSERT INTO entries (
-    id, account_id, transaction_id, amount, type
+    id, account_id, transaction_id, external_id, amount, type
     ) VALUES (
-        $1, $2, $3, $4, $5
+        $1, $2, $3, $4, $5, $6
         )
-RETURNING id, account_id, transaction_id, amount, type, created_at, updated_at
+RETURNING id, account_id, transaction_id, external_id, amount, type, created_at, updated_at
 `
 
 type CreateEntryParams struct {
 	ID            uuid.UUID
 	AccountID     uuid.UUID
 	TransactionID uuid.UUID
+	ExternalID    string
 	Amount        int64
 	Type          string
 }
@@ -33,6 +34,7 @@ func (q *Queries) CreateEntry(ctx context.Context, arg CreateEntryParams) (Entry
 		arg.ID,
 		arg.AccountID,
 		arg.TransactionID,
+		arg.ExternalID,
 		arg.Amount,
 		arg.Type,
 	)
@@ -41,6 +43,7 @@ func (q *Queries) CreateEntry(ctx context.Context, arg CreateEntryParams) (Entry
 		&i.ID,
 		&i.AccountID,
 		&i.TransactionID,
+		&i.ExternalID,
 		&i.Amount,
 		&i.Type,
 		&i.CreatedAt,
@@ -61,7 +64,7 @@ func (q *Queries) GetAccountBalance(ctx context.Context, type_ string) (int64, e
 }
 
 const getEntries = `-- name: GetEntries :many
-SELECT id, account_id, transaction_id, amount, type, created_at, updated_at FROM entries WHERE account_id = $1
+SELECT id, account_id, transaction_id, external_id, amount, type, created_at, updated_at FROM entries WHERE account_id = $1
 `
 
 func (q *Queries) GetEntries(ctx context.Context, accountID uuid.UUID) ([]Entry, error) {
@@ -77,6 +80,7 @@ func (q *Queries) GetEntries(ctx context.Context, accountID uuid.UUID) ([]Entry,
 			&i.ID,
 			&i.AccountID,
 			&i.TransactionID,
+			&i.ExternalID,
 			&i.Amount,
 			&i.Type,
 			&i.CreatedAt,

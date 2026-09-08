@@ -3,6 +3,7 @@ package investment
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -25,6 +26,7 @@ type Worker struct {
 	ledger       *domain.LedgerService
 	repo         *repository.InvestmentRepository
 	paymentRepo  *repository.PaymentsRepository
+	outboxRepo   *repository.OutboxRepository
 	channel      Publisher
 	cfg          *rabbitmq.RabbitConfig
 	capitalAccID uuid.UUID
@@ -41,6 +43,7 @@ func NewWorker(db *sql.DB, channel Publisher, cfg *rabbitmq.RabbitConfig, querie
 		repo:         repository.NewInvestmentRepository(db),
 		paymentRepo:  repository.NewPaymentsRepository(db),
 		ledger:       domain.NewLedgerService(db, repository.NewRepository(db), repository.NewClientRepository(queries)),
+		outboxRepo:   repository.NewOutboxRepository(db),
 		channel:      channel,
 		cfg:          cfg,
 		capitalAccID: capitalAccID,
@@ -51,9 +54,40 @@ func (w *Worker) HandlePaymentEvent(ctx context.Context, event commands.ResolveP
 	if event.Amount <= 0 {
 		return errors.New("payment amount must be greater than zero")
 	}
-	_, err := w.resolveInvestment(ctx, event)
+	txn, err := w.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %v", err)
+	}
+	_, err = w.resolveInvestment(ctx, event, txn)
 	if err != nil {
 		fmt.Printf("Failed to resolve investment: %v\n", err)
+		cmd, cmdErr := commands.NewCommand(
+			commands.UnresolvedPayment,
+			commands.UnresolvedPaymentPayload{
+				Amount:     event.Amount,
+				ExternalId: event.ExternalId,
+				Reason:     err.Error(),
+			},
+		)
+		if cmdErr != nil {
+			return fmt.Errorf("failed to create unresolved payment command: %v", cmdErr)
+		}
+		cmdBytes, marshalErr := json.Marshal(cmd)
+		if marshalErr != nil {
+			return fmt.Errorf("failed to marshal unresolved payment command: %v", marshalErr)
+		}
+
+		outboxMsg := database.OutboxMessage{
+			ID:            uuid.New(),
+			AggregateType: "investment",
+			AggregateID:   event.PaymentID,
+			CommandType:   string(commands.UnresolvedPayment),
+			Payload:       cmdBytes,
+		}
+		err = w.outboxRepo.CreateOutboxMessage(ctx, outboxMsg)
+		if err != nil {
+			return fmt.Errorf("failed to create outbox message: %v", err)
+		}
 		return err
 	}
 	//log.Printf("Successfully resolved investment: %+v\n", i)
@@ -67,18 +101,29 @@ func (w *Worker) HandlePaymentEvent(ctx context.Context, event commands.ResolveP
 	if err != nil {
 		return err
 	}
-	err = rabbitmq.PublishCommand(
-		w.channel,
-		w.cfg.Queues.Resolved,
-		cmd,
-	)
+	cmdBytes, err := json.Marshal(cmd)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal command: %v", err)
+	}
+	outboxMsg := database.OutboxMessage{
+		ID:            uuid.New(),
+		AggregateType: "investment",
+		AggregateID:   event.PaymentID,
+		CommandType:   string(commands.PaymentResolved),
+		Payload:       cmdBytes,
+	}
+	err = w.outboxRepo.CreateOutboxMessage(ctx, outboxMsg)
+	if err != nil {
+		return fmt.Errorf("failed to create outbox message: %v", err)
+	}
+
+	if err := txn.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %v", err)
 	}
 	return nil
 }
 
-func (w *Worker) resolveInvestment(ctx context.Context, event commands.ResolvePaymentPayload) (*database.Investment, error) {
+func (w *Worker) resolveInvestment(ctx context.Context, event commands.ResolvePaymentPayload, tx *sql.Tx) (*database.Investment, error) {
 
 	accountRef := event.PaymentRef
 	account, err := w.ledger.GetAccountDetails(ctx, accountRef)
@@ -103,28 +148,32 @@ func (w *Worker) resolveInvestment(ctx context.Context, event commands.ResolvePa
 			NextAccrualAt:    time.Now().AddDate(0, 1, 0), // set next accrual date to one month from now
 			ClientID:         account.ClientID,
 		}
-		createdInv, err := w.repo.CreateInvestment(ctx, inv)
+		createdInv, err := w.repo.WithTx(tx).CreateInvestment(ctx, inv)
 		if err != nil {
 			return nil, err
 		}
 		// Post a ledger transaction to record the investment deposit
-		tx := domain.Transaction{
-			Id:   uuid.New(),
-			Type: "investment_deposit",
+		ledgerTx := domain.Transaction{
+			Id:         uuid.New(),
+			Type:       "investment_deposit",
+			ExternalId: event.ExternalId,
 			Entries: []domain.Entry{
 				{
-					AccountId: w.capitalAccID,
-					Amount:    event.Amount,
-					Type:      domain.Debit,
+					AccountId:  w.capitalAccID,
+					Amount:     event.Amount,
+					ExternalId: event.ExternalId,
+					Type:       domain.Debit,
 				},
 				{
-					AccountId: account.ID,
-					Amount:    event.Amount,
-					Type:      domain.Credit,
+					AccountId:  account.ID,
+					Amount:     event.Amount,
+					ExternalId: event.ExternalId,
+					Type:       domain.Credit,
 				},
 			},
 		}
-		err = w.ledger.PostTransaction(ctx, tx)
+		log.Printf("posting ledger transaction: %+v\n", ledgerTx)
+		err = w.ledger.WithTx(tx).PostTransaction(ctx, ledgerTx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to post ledger transaction: %v", err)
 		}
@@ -132,7 +181,7 @@ func (w *Worker) resolveInvestment(ctx context.Context, event commands.ResolvePa
 		return createdInv, nil
 	}
 	// Update the existing investment with the new amount
-	updatedInv, err := w.repo.UpdateInvestmentPrincipal(ctx, database.Investment{
+	updatedInv, err := w.repo.WithTx(tx).UpdateInvestmentPrincipal(ctx, database.Investment{
 		PrincipalCurrent: existingInv.PrincipalCurrent + event.Amount,
 		ID:               existingInv.ID,
 	})
@@ -140,23 +189,25 @@ func (w *Worker) resolveInvestment(ctx context.Context, event commands.ResolvePa
 		return nil, fmt.Errorf("failed to update investment: %v", err)
 	}
 	log.Printf("updated existing investment: %+v\n", event)
-	tx := domain.Transaction{
+	ledgerTx := domain.Transaction{
 		Id:   uuid.New(),
 		Type: "investment_deposit",
 		Entries: []domain.Entry{
 			{
-				AccountId: w.capitalAccID,
-				Amount:    event.Amount,
-				Type:      domain.Debit,
+				AccountId:  w.capitalAccID,
+				Amount:     event.Amount,
+				ExternalId: event.ExternalId,
+				Type:       domain.Debit,
 			},
 			{
-				AccountId: account.ID,
-				Amount:    event.Amount,
-				Type:      domain.Credit,
+				AccountId:  account.ID,
+				Amount:     event.Amount,
+				ExternalId: event.ExternalId,
+				Type:       domain.Credit,
 			},
 		},
 	}
-	err = w.ledger.PostTransaction(ctx, tx)
+	err = w.ledger.WithTx(tx).PostTransaction(ctx, ledgerTx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to post ledger transaction: %v", err)
 	}

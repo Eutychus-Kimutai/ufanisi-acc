@@ -17,6 +17,9 @@ func NewAccountsRepository(db *sql.DB) *AccountsRepository {
 		db: database.New(db),
 	}
 }
+func (a *AccountsRepository) WithTx(tx *sql.Tx) *AccountsRepository {
+	return &AccountsRepository{db: a.db.WithTx(tx)}
+}
 
 func (a *AccountsRepository) CreateAccount(ctx context.Context, account database.Account) error {
 	_, err := a.db.CreateAccount(ctx, database.CreateAccountParams{

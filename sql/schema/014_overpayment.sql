@@ -1,6 +1,6 @@
 -- +goose Up
 CREATE TABLE IF NOT EXISTS overpayments (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 loan_id UUID NOT NULL REFERENCES loans(id) ON DELETE CASCADE,
 external_id TEXT NOT NULL UNIQUE,
 amount BIGINT NOT NULL CHECK (amount > 0),

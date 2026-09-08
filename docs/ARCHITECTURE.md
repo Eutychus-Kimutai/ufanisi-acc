@@ -74,3 +74,5 @@ flowchart LR
 ## Known Limitations
 
 - `cmd/loan_worker/main.go` currently declares `package loanworker`, so it is not directly runnable with `go run` until changed to `package main`.
+
+- Ledger entries are created without a way to link back to a particular payment. Proposal: to add an external id field in the ledger transaction.
