@@ -27,6 +27,7 @@ func NewOutboxDispatcher(repo *repository.OutboxRepository, channel Publisher, c
 	}
 }
 
+// DispatchOnce publishes one batch of pending investment outbox messages.
 func (d *OutboxDispatcher) DispatchOnce(ctx context.Context) error {
 	err := d.repo.ReleaseStaleLocks(ctx)
 	if err != nil {

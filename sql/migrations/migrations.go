@@ -6,6 +6,7 @@ import (
 	"fmt"
 )
 
+// Migrate creates the ledger tables that are not yet present in db.
 func Migrate(ctx context.Context, db *sql.DB) error {
 	const lockKey = int64(420694207)
 

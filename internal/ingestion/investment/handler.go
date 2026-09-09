@@ -32,6 +32,7 @@ type Worker struct {
 	capitalAccID uuid.UUID
 }
 
+// NewWorker creates an investment payment worker and resolves its capital account.
 func NewWorker(db *sql.DB, channel Publisher, cfg *rabbitmq.RabbitConfig, queries *database.Queries) (*Worker, error) {
 	capitalAccID, err := repository.NewRepository(db).GetCapitalAccount(context.Background())
 	if err != nil {
@@ -50,6 +51,7 @@ func NewWorker(db *sql.DB, channel Publisher, cfg *rabbitmq.RabbitConfig, querie
 	}, nil
 }
 
+// HandlePaymentEvent resolves an investment payment and records its outcome.
 func (w *Worker) HandlePaymentEvent(ctx context.Context, event commands.ResolvePaymentPayload) error {
 	if event.Amount <= 0 {
 		return errors.New("payment amount must be greater than zero")
@@ -127,6 +129,7 @@ func (w *Worker) HandlePaymentEvent(ctx context.Context, event commands.ResolveP
 	return nil
 }
 
+// resolveInvestment applies a payment to an investment within tx.
 func (w *Worker) resolveInvestment(ctx context.Context, event commands.ResolvePaymentPayload, tx *sql.Tx) (*database.Investment, error) {
 
 	accountRef := event.PaymentRef
@@ -257,6 +260,7 @@ func (w *Worker) RequestWithdrawal(ctx context.Context, invID uuid.UUID, amount 
 	return nil
 }
 
+// ProcessEligibleWithdrawals completes withdrawals whose notice period has elapsed.
 func (w *Worker) ProcessEligibleWithdrawals(ctx context.Context) error {
 	withdrawals, err := w.repo.ListEligibleWithdrawals(ctx)
 	if err != nil {

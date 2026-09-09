@@ -29,6 +29,7 @@ type CreateEntryParams struct {
 	Type          string
 }
 
+// CreateEntry inserts a ledger entry and returns the stored record.
 func (q *Queries) CreateEntry(ctx context.Context, arg CreateEntryParams) (Entry, error) {
 	row := q.db.QueryRowContext(ctx, createEntry,
 		arg.ID,
@@ -67,6 +68,7 @@ const getEntries = `-- name: GetEntries :many
 SELECT id, account_id, transaction_id, external_id, amount, type, created_at, updated_at FROM entries WHERE account_id = $1
 `
 
+// GetEntries returns the ledger entries for an account.
 func (q *Queries) GetEntries(ctx context.Context, accountID uuid.UUID) ([]Entry, error) {
 	rows, err := q.db.QueryContext(ctx, getEntries, accountID)
 	if err != nil {

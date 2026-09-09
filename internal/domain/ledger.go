@@ -27,9 +27,12 @@ type LedgerService struct {
 	accountRepo *repository.AccountsRepository
 }
 
+// NewLedgerService creates a ledger service backed by the provided repositories.
 func NewLedgerService(db *sql.DB, ledgerRepo *repository.LedgerRepository, clientRepo *repository.ClientRepository) *LedgerService {
 	return &LedgerService{db: db, ledgerRepo: ledgerRepo, clientRepo: clientRepo, accountRepo: repository.NewAccountsRepository(db)}
 }
+
+// WithTx returns a ledger service whose writes use tx.
 func (s *LedgerService) WithTx(tx *sql.Tx) *LedgerService {
 	return &LedgerService{
 		tx:          tx,
@@ -48,6 +51,7 @@ func (s *LedgerService) CreateAccount(ctx context.Context, account database.Acco
 	return nil
 }
 
+// PostTransaction validates and persists a balanced ledger transaction.
 func (s *LedgerService) PostTransaction(ctx context.Context, transaction Transaction) error {
 	var totalDebit, totalCredit int64
 	// Validate transaction is balanced
@@ -144,7 +148,7 @@ func (s *LedgerService) PostTransaction(ctx context.Context, transaction Transac
 	return nil
 }
 
-// CreateEntry creates a single ledger entry (not associated with a transaction)
+// CreateEntry creates ledger entries that are not associated with a transaction.
 func (s *LedgerService) CreateEntry(ctx context.Context, entry []database.CreateEntryParams) error {
 	var (
 		tx    *sql.Tx
@@ -212,7 +216,7 @@ func (s *LedgerService) GetBalance(ctx context.Context, accountType string) (int
 
 }
 
-// GetAccountHistory returns the transaction history for a given account
+// GetAccountHistory returns the transaction history for a given account.
 func (s *LedgerService) GetAccountHistory(ctx context.Context, accountId string) ([]Entry, error) {
 	id, err := uuid.Parse(accountId)
 	if err != nil {
@@ -267,7 +271,7 @@ func (s *LedgerService) GetClient(ctx context.Context, clientId uuid.UUID) (data
 	return client, nil
 }
 
-// Transfer funds between accounts
+// Transfer moves funds between two accounts with balanced ledger entries.
 func (s *LedgerService) Transfer(ctx context.Context, debitAccountID, creditAccountID uuid.UUID, amount int64, investmentType string) error {
 	var (
 		tx    *sql.Tx

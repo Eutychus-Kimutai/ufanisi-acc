@@ -12,11 +12,14 @@ type AccountsRepository struct {
 	db *database.Queries
 }
 
+// NewAccountsRepository creates an account repository backed by db.
 func NewAccountsRepository(db *sql.DB) *AccountsRepository {
 	return &AccountsRepository{
 		db: database.New(db),
 	}
 }
+
+// WithTx returns an account repository whose queries use tx.
 func (a *AccountsRepository) WithTx(tx *sql.Tx) *AccountsRepository {
 	return &AccountsRepository{db: a.db.WithTx(tx)}
 }

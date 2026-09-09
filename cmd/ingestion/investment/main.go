@@ -18,6 +18,7 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// main configures and starts the investment ingestion service.
 func main() {
 	godotenv.Load()
 	// Load configuration

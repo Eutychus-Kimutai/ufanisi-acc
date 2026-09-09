@@ -10,6 +10,7 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+// StartConsumer consumes investment payment events until the context is canceled.
 func StartConsumer(ctx context.Context, ch *amqp.Channel, queueName string, worker *Worker) error {
 	msgs, err := ch.Consume(
 		queueName,

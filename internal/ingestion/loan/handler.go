@@ -38,6 +38,7 @@ type LoanWorker struct {
 	cfg         *rabbitmq.RabbitConfig
 }
 
+// NewWorker creates a loan payment worker and its repositories.
 func NewWorker(db *sql.DB, channel Publisher, queuename string, cfg *rabbitmq.RabbitConfig) (*LoanWorker, error) {
 	return &LoanWorker{
 		db:          db,
@@ -77,6 +78,7 @@ func (w *LoanWorker) HandlePaymentEvent(ctx context.Context, event commands.Reso
 	return nil
 }
 
+// resolveLoan applies a payment to a loan and records the result within tx.
 func (w *LoanWorker) resolveLoan(ctx context.Context, event commands.ResolvePaymentPayload, tx *sql.Tx) (database.Loan, database.Client, error) {
 	accDetails, err := w.accRepo.GetAccountDetails(ctx, event.PaymentRef)
 	if err != nil {

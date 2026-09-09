@@ -16,10 +16,12 @@ type Client struct {
 	ClientType string
 }
 
+// NewClientRepository creates a client repository backed by db.
 func NewClientRepository(db *database.Queries) *ClientRepository {
 	return &ClientRepository{db: db}
 }
 
+// GetClientByID returns the client identified by clientID.
 func (r *ClientRepository) GetClientByID(ctx context.Context, clientID uuid.UUID) (database.Client, error) {
 
 	client, err := r.db.GetClientByID(ctx, clientID)

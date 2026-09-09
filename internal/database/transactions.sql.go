@@ -26,6 +26,7 @@ type CreateTransactionParams struct {
 	UpdatedAt  time.Time
 }
 
+// CreateTransaction inserts a ledger transaction and returns the stored record.
 func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionParams) (Transaction, error) {
 	row := q.db.QueryRowContext(ctx, createTransaction,
 		arg.ID,
