@@ -74,6 +74,10 @@ func TestWorker_HandlePaymentEvent(t *testing.T) {
 		}
 		cleanup := func() {
 			defer dbCleanup()
+			_, err = db.ExecContext(context.Background(), "DELETE FROM entries WHERE external_id = $1", event.ExternalId)
+			require.NoError(t, err)
+			_, err = db.ExecContext(context.Background(), "DELETE FROM transactions WHERE external_id = $1", event.ExternalId)
+			require.NoError(t, err)
 			_, err = db.ExecContext(context.Background(), "DELETE FROM loans WHERE id = $1", loanID)
 			require.NoError(t, err)
 			_, err = db.ExecContext(context.Background(), "DELETE FROM clients WHERE id = $1", clientID)

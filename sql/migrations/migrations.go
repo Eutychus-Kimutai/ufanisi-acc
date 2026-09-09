@@ -23,8 +23,8 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 
 		`CREATE TABLE IF NOT EXISTS transactions (
             id UUID PRIMARY KEY,
-		external_id TEXT NOT NULL UNIQUE,
-            type TEXT NOT NULL CHECK (type IN ('investment_deposit', 'interest_accrual', 'interest_capitalization', 'withdrawal_approved', 'withdrawal_paid', 'manual_adjustment', 'interest_income', 'interest_expense')),
+			external_id TEXT,
+            type TEXT NOT NULL CHECK (type IN ('investment_deposit', 'interest_accrual', 'interest_capitalization', 'withdrawal_approved', 'withdrawal_paid', 'manual_adjustment', 'interest_income', 'interest_expense', 'loan_payment', 'loan_overpayment')),
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );`,
@@ -140,6 +140,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
             id UUID PRIMARY KEY,
             account_id UUID NOT NULL,
             transaction_id UUID NOT NULL,
+			external_id TEXT NOT NULL,
             amount BIGINT NOT NULL,
             type TEXT NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
