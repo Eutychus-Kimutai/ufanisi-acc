@@ -242,7 +242,7 @@ SET STATUS = 'resolving',
 resolving_started_at = NOW(), updated_at = NOW()
 WHERE idempotency_key = $1
 AND (
-	status = 'received'
+	status = 'resolving'
 	OR (
 		status = 'resolving' AND
 		resolving_started_at  <= NOW() - interval '20 seconds'
@@ -251,7 +251,7 @@ AND (
 RETURNING id, idempotency_key, external_id, amount, payment_type, phone_number, client_ref, payment_ref, destination, status, resolved_type, resolving_started_at, raw_event, created_at, resolved_at, updated_at
 `
 
-// Check processing status of a payment
+// TryClaimPayment claims a payment that is eligible for processing.
 func (q *Queries) TryClaimPayment(ctx context.Context, idempotencyKey string) (Payment, error) {
 	row := q.db.QueryRowContext(ctx, tryClaimPayment, idempotencyKey)
 	var i Payment

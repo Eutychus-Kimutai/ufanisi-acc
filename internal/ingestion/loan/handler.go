@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"log"
 	"time"
 
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/commands"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/database"
+	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/domain"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/rabbitmq"
 	"github.com/Eutychus-Kimutai/ufanisi-acc/internal/repository"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -27,6 +29,7 @@ type LoanWorker struct {
 	db          *sql.DB
 	channel     Publisher
 	queuename   string
+	ledger      *domain.LedgerService
 	repo        repository.LedgerRepository
 	loanRepo    *repository.LoanRepository
 	accRepo     *repository.AccountsRepository
@@ -35,11 +38,13 @@ type LoanWorker struct {
 	cfg         *rabbitmq.RabbitConfig
 }
 
+// NewWorker creates a loan payment worker and its repositories.
 func NewWorker(db *sql.DB, channel Publisher, queuename string, cfg *rabbitmq.RabbitConfig) (*LoanWorker, error) {
 	return &LoanWorker{
 		db:          db,
 		channel:     channel,
 		queuename:   queuename,
+		ledger:      domain.NewLedgerService(db, repository.NewRepository(db), repository.NewClientRepository(database.New(db))),
 		repo:        *repository.NewRepository(db),
 		loanRepo:    repository.NewLoanRepository(db),
 		accRepo:     repository.NewAccountsRepository(db),
@@ -73,6 +78,7 @@ func (w *LoanWorker) HandlePaymentEvent(ctx context.Context, event commands.Reso
 	return nil
 }
 
+// resolveLoan applies a payment to a loan and records the result within tx.
 func (w *LoanWorker) resolveLoan(ctx context.Context, event commands.ResolvePaymentPayload, tx *sql.Tx) (database.Loan, database.Client, error) {
 	accDetails, err := w.accRepo.GetAccountDetails(ctx, event.PaymentRef)
 	if err != nil {
@@ -83,6 +89,11 @@ func (w *LoanWorker) resolveLoan(ctx context.Context, event commands.ResolvePaym
 
 		return database.Loan{}, database.Client{}, fmt.Errorf("failed to retrieve account details: %v", err)
 	}
+	capitalAccID, err := w.repo.GetCapitalAccount(ctx)
+	if err != nil {
+		return database.Loan{}, database.Client{}, fmt.Errorf("failed to retrieve capital account ID: %v", err)
+	}
+
 	log.Printf("Retrieved account details: %+v\n", accDetails)
 
 	loan, err := w.loanRepo.GetLoanByReference(ctx, event.PaymentRef)
@@ -129,6 +140,29 @@ func (w *LoanWorker) resolveLoan(ctx context.Context, event commands.ResolvePaym
 				})
 				if err != nil {
 					return database.Loan{}, database.Client{}, fmt.Errorf("failed to create outbox message for unresolved payment: %v", err)
+				}
+				transaction := domain.Transaction{
+					Id:         uuid.New(),
+					Type:       "loan_overpayment",
+					ExternalId: event.ExternalId,
+					Entries: []domain.Entry{
+						{
+							AccountId:  capitalAccID,
+							Type:       domain.Debit,
+							ExternalId: event.ExternalId,
+							Amount:     event.Amount,
+						},
+						{
+							AccountId:  accDetails.ID,
+							Type:       domain.Credit,
+							ExternalId: event.ExternalId,
+							Amount:     event.Amount,
+						},
+					},
+				}
+				err = w.ledger.WithTx(tx).PostTransaction(ctx, transaction)
+				if err != nil {
+					return database.Loan{}, database.Client{}, fmt.Errorf("failed to post ledger transaction for overpayment: %v", err)
 				}
 
 				return *loan, database.Client{}, nil
@@ -213,6 +247,29 @@ func (w *LoanWorker) resolveLoan(ctx context.Context, event commands.ResolvePaym
 			if err != nil {
 				return database.Loan{}, database.Client{}, fmt.Errorf("failed to create outbox message for resolved payment: %v", err)
 			}
+			transaction := domain.Transaction{
+				Id:         uuid.New(),
+				Type:       "loan_payment",
+				ExternalId: event.ExternalId,
+				Entries: []domain.Entry{
+					{
+						AccountId:  capitalAccID,
+						Type:       domain.Debit,
+						ExternalId: event.ExternalId,
+						Amount:     event.Amount,
+					},
+					{
+						AccountId:  accDetails.ID,
+						Type:       domain.Credit,
+						ExternalId: event.ExternalId,
+						Amount:     event.Amount,
+					},
+				},
+			}
+			err = w.ledger.WithTx(tx).PostTransaction(ctx, transaction)
+			if err != nil {
+				return database.Loan{}, database.Client{}, fmt.Errorf("failed to post ledger transaction: %v", err)
+			}
 
 		} else {
 			return database.Loan{}, database.Client{}, fmt.Errorf("overpayment with external ID: %v already exists", event.ExternalId)
@@ -230,6 +287,31 @@ func (w *LoanWorker) resolveLoan(ctx context.Context, event commands.ResolvePaym
 		if err != nil {
 			return database.Loan{}, database.Client{}, fmt.Errorf("failed to create resolved payment command: %v", err)
 		}
+		transaction := domain.Transaction{
+			Id:         uuid.New(),
+			Type:       "loan_payment",
+			ExternalId: event.ExternalId,
+			Entries: []domain.Entry{
+				{
+					AccountId:  capitalAccID,
+					Type:       domain.Debit,
+					ExternalId: event.ExternalId,
+					Amount:     event.Amount,
+				},
+				{
+					AccountId:  accDetails.ID,
+					Type:       domain.Credit,
+					ExternalId: event.ExternalId,
+					Amount:     event.Amount,
+				},
+			},
+		}
+		log.Printf("Transaction details: %+v\n", transaction.Entries)
+		err = w.ledger.WithTx(tx).PostTransaction(ctx, transaction)
+		if err != nil {
+			return database.Loan{}, database.Client{}, fmt.Errorf("failed to post ledger transaction: %v", err)
+		}
+
 		cmdBytes, err := json.Marshal(cmd)
 		if err != nil {
 			return database.Loan{}, database.Client{}, fmt.Errorf("failed to marshal resolved payment command: %v", err)

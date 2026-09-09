@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS entries (
     id UUID PRIMARY KEY,
     account_id UUID NOT NULL,
     transaction_id UUID NOT NULL,
+    external_id TEXT NOT NULL,
     amount BIGINT NOT NULL,
     type TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

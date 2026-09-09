@@ -10,6 +10,7 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+// StartConsumer consumes loan payment events until the context is canceled.
 func StartConsumer(ctx context.Context, ch *amqp.Channel, queueName string, worker *LoanWorker) error {
 	msgs, err := ch.Consume(
 		queueName,
@@ -51,12 +52,12 @@ func StartConsumer(ctx context.Context, ch *amqp.Channel, queueName string, work
 				}
 
 				loanHandlingErr := worker.HandlePaymentEvent(ctx, payload)
-				if err != nil {
+				if loanHandlingErr != nil {
 					cmd := commands.UnresolvedPaymentPayload{
 						Amount:     payload.Amount,
 						ClientRef:  payload.ClientRef,
 						ExternalId: payload.ExternalId,
-						Reason:     err.Error(),
+						Reason:     loanHandlingErr.Error(),
 					}
 					unresolvedCmd, err := commands.NewCommand(
 						commands.UnresolvedPayment,

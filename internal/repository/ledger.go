@@ -20,10 +20,16 @@ var (
 	ErrAccountExists   = errors.New("account already exists")
 )
 
+// NewRepository creates a ledger repository backed by db.
 func NewRepository(db *sql.DB) *LedgerRepository {
 	return &LedgerRepository{
 		db: database.New(db),
 	}
+}
+
+// WithTx returns a ledger repository whose queries use tx.
+func (l *LedgerRepository) WithTx(tx *sql.Tx) *LedgerRepository {
+	return &LedgerRepository{db: l.db.WithTx(tx)}
 }
 
 func (l *LedgerRepository) CreateAccount(ctx context.Context, account database.Account) error {
@@ -74,6 +80,7 @@ func (l *LedgerRepository) GetAccountByID(ctx context.Context, accountId uuid.UU
 	return acc, nil
 }
 
+// GetTransactionEntries returns all ledger entries for an account.
 func (l *LedgerRepository) GetTransactionEntries(ctx context.Context, accountId uuid.UUID) ([]database.Entry, error) {
 	tx, err := l.db.GetEntries(ctx, accountId)
 	if err != nil {
@@ -85,6 +92,7 @@ func (l *LedgerRepository) GetTransactionEntries(ctx context.Context, accountId 
 			TransactionID: entry.TransactionID,
 			AccountID:     entry.AccountID,
 			Amount:        entry.Amount,
+			ExternalID:    entry.ExternalID,
 			Type:          entry.Type,
 		}
 	}
@@ -141,12 +149,14 @@ func (l *LedgerRepository) GetCapitalAccount(ctx context.Context) (uuid.UUID, er
 	return accID, nil
 }
 
+// CreateEntryWithTx persists a ledger entry within tx.
 func (l *LedgerRepository) CreateEntryWithTx(ctx context.Context, tx *sql.Tx, entry database.Entry) error {
 	qtx := l.db.WithTx(tx)
 	_, err := qtx.CreateEntry(ctx, database.CreateEntryParams{
 		ID:            entry.ID,
 		AccountID:     entry.AccountID,
 		TransactionID: entry.TransactionID,
+		ExternalID:    entry.ExternalID,
 		Amount:        entry.Amount,
 		Type:          entry.Type,
 	})
@@ -156,13 +166,15 @@ func (l *LedgerRepository) CreateEntryWithTx(ctx context.Context, tx *sql.Tx, en
 	return nil
 }
 
+// CreateTransactionWithTx persists a ledger transaction within tx.
 func (l *LedgerRepository) CreateTransactionWithTx(ctx context.Context, tx *sql.Tx, transaction database.Transaction) error {
 	qtx := l.db.WithTx(tx)
 	_, err := qtx.CreateTransaction(ctx, database.CreateTransactionParams{
-		ID:        transaction.ID,
-		Type:      transaction.Type,
-		CreatedAt: transaction.CreatedAt,
-		UpdatedAt: time.Now(),
+		ID:         transaction.ID,
+		Type:       transaction.Type,
+		CreatedAt:  transaction.CreatedAt,
+		ExternalID: transaction.ExternalID,
+		UpdatedAt:  time.Now(),
 	})
 	if err != nil {
 		return err
