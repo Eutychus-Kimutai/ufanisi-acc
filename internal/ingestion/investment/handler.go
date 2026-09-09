@@ -88,6 +88,10 @@ func (w *Worker) HandlePaymentEvent(ctx context.Context, event commands.ResolveP
 		if err != nil {
 			return fmt.Errorf("failed to create outbox message: %v", err)
 		}
+		if commitErr := txn.Commit(); commitErr != nil {
+			return fmt.Errorf("failed to commit transaction: %v", commitErr)
+		}
+
 		return err
 	}
 	//log.Printf("Successfully resolved investment: %+v\n", i)
@@ -112,7 +116,7 @@ func (w *Worker) HandlePaymentEvent(ctx context.Context, event commands.ResolveP
 		CommandType:   string(commands.PaymentResolved),
 		Payload:       cmdBytes,
 	}
-	err = w.outboxRepo.CreateOutboxMessage(ctx, outboxMsg)
+	err = w.outboxRepo.WithTx(txn).CreateOutboxMessage(ctx, outboxMsg)
 	if err != nil {
 		return fmt.Errorf("failed to create outbox message: %v", err)
 	}
@@ -190,8 +194,9 @@ func (w *Worker) resolveInvestment(ctx context.Context, event commands.ResolvePa
 	}
 	log.Printf("updated existing investment: %+v\n", event)
 	ledgerTx := domain.Transaction{
-		Id:   uuid.New(),
-		Type: "investment_deposit",
+		Id:         uuid.New(),
+		Type:       "investment_deposit",
+		ExternalId: event.ExternalId,
 		Entries: []domain.Entry{
 			{
 				AccountId:  w.capitalAccID,
@@ -278,7 +283,7 @@ func (w *Worker) ProcessEligibleWithdrawals(ctx context.Context) error {
 
 		// transfer funds (principal + accrued interest) to client account
 
-		err = w.ledger.Transfer(ctx, w.capitalAccID, wdr.InvestmentID, wdr.Amount, "withdrawal_approved")
+		err = w.ledger.WithTx(tx).Transfer(ctx, w.capitalAccID, wdr.InvestmentID, wdr.Amount, "withdrawal_approved")
 		if err != nil {
 			fmt.Printf("Failed to transfer funds for withdrawal ID %v: %v\n", wdr.ID, err)
 			continue

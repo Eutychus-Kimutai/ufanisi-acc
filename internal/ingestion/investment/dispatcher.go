@@ -39,6 +39,10 @@ func (d *OutboxDispatcher) DispatchOnce(ctx context.Context) error {
 	for _, msg := range messages {
 		if msg.AggregateType != "investment" {
 			log.Printf("Skipping message ID %s with aggregate type %s\n", msg.ID, msg.AggregateType)
+			err = d.repo.MarkMessageAsFailed(ctx, msg.ID, "unknown aggregate type")
+			if err != nil {
+				log.Printf("Failed to mark message ID %s as failed: %v\n", msg.ID, err)
+			}
 			continue
 		}
 		var queueName = ""

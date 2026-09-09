@@ -88,6 +88,7 @@ func (l *LedgerRepository) GetTransactionEntries(ctx context.Context, accountId 
 			TransactionID: entry.TransactionID,
 			AccountID:     entry.AccountID,
 			Amount:        entry.Amount,
+			ExternalID:    entry.ExternalID,
 			Type:          entry.Type,
 		}
 	}

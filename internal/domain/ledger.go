@@ -20,6 +20,7 @@ var (
 )
 
 type LedgerService struct {
+	tx          *sql.Tx
 	db          *sql.DB
 	ledgerRepo  *repository.LedgerRepository
 	clientRepo  *repository.ClientRepository
@@ -31,8 +32,11 @@ func NewLedgerService(db *sql.DB, ledgerRepo *repository.LedgerRepository, clien
 }
 func (s *LedgerService) WithTx(tx *sql.Tx) *LedgerService {
 	return &LedgerService{
-		db:         s.db,
-		ledgerRepo: s.ledgerRepo.WithTx(tx),
+		tx:          tx,
+		db:          s.db,
+		ledgerRepo:  s.ledgerRepo.WithTx(tx),
+		clientRepo:  s.clientRepo,
+		accountRepo: s.accountRepo.WithTx(tx),
 	}
 }
 
@@ -67,11 +71,28 @@ func (s *LedgerService) PostTransaction(ctx context.Context, transaction Transac
 	if totalDebit != totalCredit {
 		return ErrUnbalancedTransaction
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
+	var (
+		tx    *sql.Tx
+		err   error
+		ownTx bool
+	)
+
+	if s.tx != nil {
+		tx = s.tx
+	} else {
+		tx, err = s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		ownTx = true
+
+		defer func() {
+			if ownTx {
+				tx.Rollback()
+
+			}
+		}()
 	}
-	defer tx.Rollback()
 	transactionId := uuid.New()
 	if transaction.Id != uuid.Nil {
 		transactionId = transaction.Id
@@ -113,20 +134,40 @@ func (s *LedgerService) PostTransaction(ctx context.Context, transaction Transac
 			return err
 		}
 	}
-	err = tx.Commit()
-	if err != nil {
-		return err
+	if ownTx {
+		err = tx.Commit()
+		if err != nil {
+			return err
+		}
 	}
+
 	return nil
 }
 
 // CreateEntry creates a single ledger entry (not associated with a transaction)
 func (s *LedgerService) CreateEntry(ctx context.Context, entry []database.CreateEntryParams) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
+	var (
+		tx    *sql.Tx
+		err   error
+		ownTx bool
+	)
+
+	if s.tx != nil {
+		tx = s.tx
+	} else {
+
+		tx, err = s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		ownTx = true
+		defer func() {
+			if ownTx {
+				tx.Rollback()
+			}
+		}()
 	}
-	defer tx.Rollback()
+
 	// Verify account exists
 	for _, entry := range entry {
 		_, err := s.ledgerRepo.GetAccountByID(ctx, entry.AccountID)
@@ -134,8 +175,10 @@ func (s *LedgerService) CreateEntry(ctx context.Context, entry []database.Create
 			if errors.Is(err, sql.ErrNoRows) {
 				return ErrAccountNotFound
 			}
-			tx.Rollback()
-			return err
+			if ownTx {
+				tx.Rollback()
+				return err
+			}
 		}
 		err = s.ledgerRepo.CreateEntryWithTx(ctx, tx, database.Entry{
 			ID:        uuid.New(),
@@ -149,10 +192,13 @@ func (s *LedgerService) CreateEntry(ctx context.Context, entry []database.Create
 			return err
 		}
 	}
-	err = tx.Commit()
-	if err != nil {
-		return err
+	if ownTx {
+		err = tx.Commit()
+		if err != nil {
+			return err
+		}
 	}
+
 	return nil
 }
 
@@ -183,6 +229,7 @@ func (s *LedgerService) GetAccountHistory(ctx context.Context, accountId string)
 			AccountId:     e.AccountID,
 			Amount:        e.Amount,
 			Type:          EntryType(e.Type),
+			ExternalId:    e.ExternalID,
 		}
 	}
 	return result, nil
@@ -222,10 +269,25 @@ func (s *LedgerService) GetClient(ctx context.Context, clientId uuid.UUID) (data
 
 // Transfer funds between accounts
 func (s *LedgerService) Transfer(ctx context.Context, debitAccountID, creditAccountID uuid.UUID, amount int64, investmentType string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	defer tx.Rollback()
-	if err != nil {
-		return err
+	var (
+		tx    *sql.Tx
+		err   error
+		ownTx bool
+	)
+
+	if s.tx != nil {
+		tx = s.tx
+	} else {
+		tx, err = s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		ownTx = true
+		defer func() {
+			if ownTx {
+				tx.Rollback()
+			}
+		}()
 	}
 	// Verify accounts exist
 	_, err = s.ledgerRepo.GetAccountByID(ctx, debitAccountID)
@@ -274,9 +336,12 @@ func (s *LedgerService) Transfer(ctx context.Context, debitAccountID, creditAcco
 	if err != nil {
 		return err
 	}
-	err = tx.Commit()
-	if err != nil {
-		return err
+	if ownTx {
+		err = tx.Commit()
+		if err != nil {
+			return err
+		}
 	}
+
 	return nil
 }

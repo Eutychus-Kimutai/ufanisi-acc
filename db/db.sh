@@ -27,7 +27,7 @@ delete_clients() {
 get_accounts() {
 	psql ledger -c "SELECT * FROM accounts;"
 }
-cdelete_accounts() {
+delete_accounts() {
 	psql ledger -c "DELETE FROM accounts;"
 }
 get_payment_references() {
@@ -92,5 +92,5 @@ elif [ "$1" = "delete_accounts" ]; then
 elif [ "$1" = "delete_clients" ]; then
 	delete_clients
 else
-	echo "Usage: $0 ledger|payments|delete_payments|loans|investments|overpayments|entries|delete_entries|delete_loans|delete_investments|delete_overpayments|seed_clients|seed_accounts"
+	echo "Usage: $0 payments|delete_payments|loans|investments|overpayments|entries|delete_entries|delete_loans|delete_investments|delete_overpayments|seed_clients|seed_accounts"
 fi

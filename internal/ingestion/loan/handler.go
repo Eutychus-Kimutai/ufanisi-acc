@@ -158,7 +158,7 @@ func (w *LoanWorker) resolveLoan(ctx context.Context, event commands.ResolvePaym
 						},
 					},
 				}
-				err = w.ledger.PostTransaction(ctx, transaction)
+				err = w.ledger.WithTx(tx).PostTransaction(ctx, transaction)
 				if err != nil {
 					return database.Loan{}, database.Client{}, fmt.Errorf("failed to post ledger transaction for overpayment: %v", err)
 				}
@@ -264,7 +264,7 @@ func (w *LoanWorker) resolveLoan(ctx context.Context, event commands.ResolvePaym
 					},
 				},
 			}
-			err = w.ledger.PostTransaction(ctx, transaction)
+			err = w.ledger.WithTx(tx).PostTransaction(ctx, transaction)
 			if err != nil {
 				return database.Loan{}, database.Client{}, fmt.Errorf("failed to post ledger transaction: %v", err)
 			}
@@ -305,7 +305,7 @@ func (w *LoanWorker) resolveLoan(ctx context.Context, event commands.ResolvePaym
 			},
 		}
 		log.Printf("Transaction details: %+v\n", transaction.Entries)
-		err = w.ledger.PostTransaction(ctx, transaction)
+		err = w.ledger.WithTx(tx).PostTransaction(ctx, transaction)
 		if err != nil {
 			return database.Loan{}, database.Client{}, fmt.Errorf("failed to post ledger transaction: %v", err)
 		}
